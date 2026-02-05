@@ -29,12 +29,8 @@ export default function Orders() {
 
   const companyOptions = [
     { value: "all", label: "All Companies" },
-    { value: "main", label: "Main Company" },
     ...(subCompanies?.map((sc) => ({ value: sc.id, label: sc.name })) || []),
   ];
-  console.log("orders: ", orders);
-
-  console.log("orders: ", orders);
 
   const updateOrderPayment = useDataStore((state) => state.updateOrderPayment);
   const updateOrder = useDataStore((state) => state.updateOrder);
@@ -100,7 +96,7 @@ export default function Orders() {
 
       return dateMatch && companyMatch;
     });
-  }, [filterDate, filterEndDate]);
+  }, [filterDate, filterEndDate, selectedCompany]);
 
   const columns = useMemo<ColumnDef<(typeof orders)[0]>[]>(
     () => [

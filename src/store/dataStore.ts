@@ -47,6 +47,7 @@ export interface Order {
     status: string;
     amountPaid: number;
     paymentStatus: "Unpaid" | "Partial" | "Paid";
+    subCompanyId?: string;
 }
 
 export interface Purchase {
@@ -74,6 +75,17 @@ export interface Transaction {
 
 // ============= Settings =============
 export interface CompanySettings {
+    name: string;
+    address: string;
+    city: string;
+    phone: string;
+    email: string;
+
+    website: string;
+}
+
+export interface SubCompany {
+    id: string;
     name: string;
     address: string;
     city: string;
@@ -222,6 +234,7 @@ interface DataState {
     purchases: Purchase[];
     transactions: Transaction[];
     companySettings: CompanySettings;
+    subCompanies: SubCompany[];
 
     // Customer actions
     addCustomer: (customer: Customer) => void;
@@ -255,6 +268,11 @@ interface DataState {
 
     // Settings actions
     updateCompanySettings: (settings: CompanySettings) => void;
+
+    // Sub-company actions
+    addSubCompany: (subCompany: SubCompany) => void;
+    updateSubCompany: (id: string, subCompany: Partial<SubCompany>) => void;
+    deleteSubCompany: (id: string) => void;
 }
 
 export const useDataStore = create<DataState>()(persist(
@@ -275,6 +293,7 @@ export const useDataStore = create<DataState>()(persist(
             email: "support@yourcompany.com",
             website: "www.yourcompany.com",
         },
+        subCompanies: [],
 
         // Customer actions
         addCustomer: (customer) =>
@@ -394,6 +413,20 @@ export const useDataStore = create<DataState>()(persist(
         // Settings actions
         updateCompanySettings: (settings) =>
             set(() => ({ companySettings: settings })),
+
+        // Sub-company actions
+        addSubCompany: (subCompany) =>
+            set((state) => ({ subCompanies: [...state.subCompanies, subCompany] })),
+        updateSubCompany: (id, updates) =>
+            set((state) => ({
+                subCompanies: state.subCompanies.map((sc) =>
+                    sc.id === id ? { ...sc, ...updates } : sc
+                ),
+            })),
+        deleteSubCompany: (id) =>
+            set((state) => ({
+                subCompanies: state.subCompanies.filter((sc) => sc.id !== id),
+            })),
     }),
     {
         name: "data-store",

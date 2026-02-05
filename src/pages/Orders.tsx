@@ -20,16 +20,18 @@ import { PaymentModal } from "../components/PaymentModal";
 import { Toast } from "../components/Toast";
 import { useDataStore } from "../store/dataStore";
 
-const COMPANIES = [
-  { value: "all", label: "All Companies" },
-  { value: "company-1", label: "Tech Solutions Inc" },
-  { value: "company-2", label: "Global Logistics" },
-  { value: "company-3", label: "Nexus Retail" },
-];
+// COMPANIES removed, will derive from store
 
 export default function Orders() {
   const navigate = useNavigate();
   const orders = useDataStore((state) => state.orders);
+  const subCompanies = useDataStore((state) => state.subCompanies);
+
+  const companyOptions = [
+    { value: "all", label: "All Companies" },
+    { value: "main", label: "Main Company" },
+    ...(subCompanies?.map((sc) => ({ value: sc.id, label: sc.name })) || []),
+  ];
   console.log("orders: ", orders);
 
   console.log("orders: ", orders);
@@ -73,19 +75,30 @@ export default function Orders() {
   // Filter orders by date range
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
+      // Date Filter
+      let dateMatch = true;
       try {
-        // Parse the date string - handle various formats
         const orderDate = new Date(order.date);
-        if (isNaN(orderDate.getTime())) {
-          // If date is invalid, include it in results
-          return true;
+        if (!isNaN(orderDate.getTime())) {
+          const orderDateStr = orderDate.toISOString().split("T")[0];
+          dateMatch =
+            orderDateStr >= filterDate && orderDateStr <= filterEndDate;
         }
-        const orderDateStr = orderDate.toISOString().split("T")[0];
-        return orderDateStr >= filterDate && orderDateStr <= filterEndDate;
       } catch {
-        // If any error, include the order
-        return true;
+        dateMatch = true;
       }
+
+      // Company Filter
+      let companyMatch = true;
+      if (selectedCompany === "all") {
+        companyMatch = true;
+      } else if (selectedCompany === "main") {
+        companyMatch = !order.subCompanyId;
+      } else {
+        companyMatch = order.subCompanyId === selectedCompany;
+      }
+
+      return dateMatch && companyMatch;
     });
   }, [filterDate, filterEndDate]);
 
@@ -276,7 +289,7 @@ export default function Orders() {
               Company:
             </span>
             <Select
-              options={COMPANIES}
+              options={companyOptions}
               value={selectedCompany}
               onChange={setSelectedCompany}
               className="w-[200px]"

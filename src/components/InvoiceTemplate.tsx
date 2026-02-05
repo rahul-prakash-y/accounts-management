@@ -10,12 +10,20 @@ interface InvoiceTemplateProps {
     total: number;
     status: string;
     items: OrderItem[];
+    subCompanyId?: string;
   };
 }
 
 export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
   ({ order }, ref) => {
     const companySettings = useDataStore((state) => state.companySettings);
+    const subCompanies = useDataStore((state) => state.subCompanies);
+
+    const subCompany = order.subCompanyId
+      ? subCompanies.find((sc) => sc.id === order.subCompanyId)
+      : null;
+
+    const details = subCompany || companySettings;
 
     // Generate dummy items for the invoice
     const items = Array.from({ length: order.items.length }, (_, i) => ({
@@ -33,16 +41,14 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
           <div className="flex justify-between">
             <div>
               <p className="font-semibold">
-                {companySettings?.name || "Your Company Name"}
+                {details?.name || "Your Company Name"}
               </p>
               <p className="text-sm">
-                {companySettings?.address || "123 Business Street"}
+                {details?.address || "123 Business Street"}
               </p>
+              <p className="text-sm">{details?.city || "City, State 12345"}</p>
               <p className="text-sm">
-                {companySettings?.city || "City, State 12345"}
-              </p>
-              <p className="text-sm">
-                Phone: {companySettings?.phone || "(123) 456-7890"}
+                Phone: {details?.phone || "(123) 456-7890"}
               </p>
             </div>
             <div className="text-right">
@@ -135,7 +141,7 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
           <p>Thank you for your business!</p>
           <p className="mt-2">
             For questions about this invoice, please contact us at{" "}
-            {companySettings?.email || "support@yourcompany.com"}
+            {details?.email || "support@yourcompany.com"}
           </p>
         </div>
       </div>

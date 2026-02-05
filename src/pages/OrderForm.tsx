@@ -29,7 +29,9 @@ type OrderFormValues = {
   total: number;
   status: string;
   amountPaid: number;
+  amountPaid: number;
   paymentStatus: "Unpaid" | "Partial" | "Paid";
+  subCompanyId?: string;
 };
 
 // Dummy Data (would be from DB)
@@ -80,6 +82,7 @@ export default function OrderForm() {
 
   console.log("id: ", id);
   const customers = useDataStore((state) => state.customers);
+  const subCompanies = useDataStore((state) => state.subCompanies);
   const salemens = useDataStore((state) => state.employees);
   const inventoryItems = useDataStore((state) => state.inventory);
   const createSale = useDataStore((state) => state.addOrder);
@@ -109,6 +112,11 @@ export default function OrderForm() {
       price: item.price,
     };
   });
+  const subCompanyOptions = subCompanies?.map((sc) => ({
+    value: sc.id,
+    label: sc.name,
+  }));
+
   const orders = useDataStore((s) => s.orders);
 
   const editableOrder =
@@ -122,6 +130,7 @@ export default function OrderForm() {
         total: editableOrder?.total || 0,
         amountPaid: editableOrder?.amountPaid || 0,
         paymentStatus: editableOrder?.paymentStatus || "Unpaid",
+        subCompanyId: editableOrder?.subCompanyId || "",
         customer_name: editableOrder?.customer_name || "",
         customer_address: editableOrder?.customer_address || "",
         salesman_no: editableOrder?.salesman_no || "",
@@ -261,6 +270,17 @@ export default function OrderForm() {
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
         {/* Header Details */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-card p-6 rounded-xl border border-border shadow-sm">
+          <div className="space-y-2 md:col-span-2">
+            <label className="text-sm font-medium">
+              Bill From (Sub-company)
+            </label>
+            <Select
+              options={subCompanyOptions}
+              value={watch("subCompanyId")}
+              onChange={(value) => setValue("subCompanyId", value)}
+              placeholder="Select Sub-company (Default: Main Company)"
+            />
+          </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Customer Name</label>
             <Select
@@ -272,7 +292,7 @@ export default function OrderForm() {
                   (c) => c.value === value,
                 );
                 if (customer) {
-                  setValue("customer_address", customer.address);
+                  setValue("customer_address", customer.address || "");
                 }
               }}
               placeholder="Select customer"

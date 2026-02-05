@@ -4,13 +4,16 @@ import { useDataStore } from "../store/dataStore";
 
 interface InvoiceTemplateProps {
   order: {
-    id: number;
+    id: number | string; // Accept string 'NEW' from OrderForm
     customer_name: string;
+    customer_address?: string;
+    salesman_no?: string;
     date: string;
     total: number;
     status: string;
     items: OrderItem[];
     subCompanyId?: string;
+    discount?: number;
   };
 }
 
@@ -24,23 +27,30 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
       : null;
 
     const details = subCompany || companySettings;
+    
 
-    // Generate dummy items for the invoice
-    const items = Array.from({ length: order.items.length }, (_, i) => ({
-      name: `Product ${i + 1}`,
-      quantity: Math.floor(Math.random() * 5) + 1,
-      price: (Math.random() * 100).toFixed(2),
-      total: ((Math.random() * 5 + 1) * (Math.random() * 100)).toFixed(2),
-    }));
+    // Use real items from order
+    const items = order.items;
+
+    // Calculate subtotal if not explicit (optional, but safe)
+    const subtotal = items.reduce(
+      (sum, item) => sum + item.quantity * item.sellingPrice,
+      0,
+    );
+    const discount = order.discount || 0;
+    // grandTotal is order.total
 
     return (
-      <div ref={ref} className="p-8 bg-white text-black">
+      <div
+        ref={ref}
+        className="p-8 bg-white text-black max-w-[210mm] mx-auto min-h-[297mm]"
+      >
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">SALES INVOICE</h1>
-          <div className="flex justify-between">
+          <div className="flex justify-between items-start">
             <div>
-              <p className="font-semibold">
+              <p className="font-semibold text-lg">
                 {details?.name || "Your Company Name"}
               </p>
               <p className="text-sm">
@@ -50,13 +60,33 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
               <p className="text-sm">
                 Phone: {details?.phone || "(123) 456-7890"}
               </p>
+              {companySettings?.gstNo && (
+                <p className="text-sm font-medium mt-1">
+                  GSTIN: {companySettings.gstNo}
+                </p>
+              )}
             </div>
+            {/* Bill To */}
+        <div className="mb-6">
+          <p className="font-semibold mb-1 border-b inline-block border-gray-400">
+            Bill To:
+          </p>
+          <p className="font-bold text-lg">{order.customer_name}</p>
+          <p className="text-sm whitespace-pre-line text-gray-700">
+            {order.customer_address || "No Address Provided"}
+          </p>
+        </div>
+            {/* Invoice Meta */}
             <div className="text-right">
               <p className="text-sm">
                 <span className="font-semibold">Invoice #:</span> {order.id}
               </p>
               <p className="text-sm">
                 <span className="font-semibold">Date:</span> {order.date}
+              </p>
+              <p className="text-sm">
+                <span className="font-semibold">Salesman:</span>{" "}
+                {order.salesman_no || "N/A"}
               </p>
               <p className="text-sm">
                 <span className="font-semibold">Status:</span>{" "}
@@ -74,11 +104,7 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
           </div>
         </div>
 
-        {/* Bill To */}
-        <div className="mb-6">
-          <p className="font-semibold mb-1">Bill To:</p>
-          <p className="text-sm">{order.customer_name}</p>
-        </div>
+        
 
         {/* Items Table */}
         <table className="w-full border-collapse mb-6">
@@ -91,7 +117,7 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
                 Quantity
               </th>
               <th className="border border-gray-400 px-4 py-2 text-right">
-                Price
+                Unit Price
               </th>
               <th className="border border-gray-400 px-4 py-2 text-right">
                 Total
@@ -102,16 +128,16 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
             {items.map((item, index) => (
               <tr key={index}>
                 <td className="border border-gray-400 px-4 py-2">
-                  {item.name}
+                  {item.description || "Item"}
                 </td>
                 <td className="border border-gray-400 px-4 py-2 text-center">
                   {item.quantity}
                 </td>
                 <td className="border border-gray-400 px-4 py-2 text-right">
-                  ${item.price}
+                  ${item.sellingPrice.toFixed(2)}
                 </td>
                 <td className="border border-gray-400 px-4 py-2 text-right">
-                  ${item.total}
+                  ${(item.quantity * item.sellingPrice).toFixed(2)}
                 </td>
               </tr>
             ))}
@@ -123,15 +149,21 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
           <div className="w-64">
             <div className="flex justify-between py-2 border-t border-gray-400">
               <span className="font-semibold">Subtotal:</span>
-              <span>${order.total}</span>
+              <span>${subtotal.toFixed(2)}</span>
             </div>
+            {discount > 0 && (
+              <div className="flex justify-between py-2 text-red-600">
+                <span className="font-semibold">Discount:</span>
+                <span>-${discount.toFixed(2)}</span>
+              </div>
+            )}
             <div className="flex justify-between py-2">
               <span className="font-semibold">Tax (0%):</span>
               <span>$0.00</span>
             </div>
             <div className="flex justify-between py-2 border-t-2 border-gray-800 font-bold text-lg">
               <span>TOTAL:</span>
-              <span>${order.total}</span>
+              <span>${order.total.toFixed(2)}</span>
             </div>
           </div>
         </div>

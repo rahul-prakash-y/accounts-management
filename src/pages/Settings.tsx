@@ -30,6 +30,7 @@ export default function Settings() {
     phone: "",
     email: "",
     website: "",
+    gstNo: "",
   });
 
   const [toast, setToast] = useState<{
@@ -50,12 +51,16 @@ export default function Settings() {
     phone: "",
     email: "",
     website: "",
+    gstNo: "",
   });
 
   // Load initial data
   useEffect(() => {
     if (companySettings) {
-      setFormData(companySettings);
+      setFormData({
+        ...companySettings,
+        gstNo: companySettings.gstNo || "",
+      });
     }
   }, [companySettings]);
 
@@ -74,7 +79,10 @@ export default function Settings() {
   const handleOpenSubCompanyModal = (subCompany?: SubCompany) => {
     if (subCompany) {
       setEditingSubCompany(subCompany);
-      setSubCompanyForm(subCompany);
+      setSubCompanyForm({
+        ...subCompany,
+        gstNo: subCompany.gstNo || "",
+      });
     } else {
       setEditingSubCompany(null);
       setSubCompanyForm({
@@ -85,6 +93,7 @@ export default function Settings() {
         phone: "",
         email: "",
         website: "",
+        gstNo: "",
       });
     }
     setIsSubCompanyModalOpen(true);
@@ -210,6 +219,16 @@ export default function Settings() {
                 onChange={handleChange}
                 className="w-full p-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="support@company.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">GST No.</label>
+              <input
+                name="gstNo"
+                value={formData.gstNo || ""}
+                onChange={handleChange}
+                className="w-full p-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="GSTIN"
               />
             </div>
           </div>
@@ -403,6 +422,20 @@ export default function Settings() {
                 className="w-full p-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">GST No.</label>
+            <input
+              value={subCompanyForm.gstNo || ""}
+              onChange={(e) =>
+                setSubCompanyForm({
+                  ...subCompanyForm,
+                  gstNo: e.target.value,
+                })
+              }
+              className="w-full p-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder="GSTIN"
+            />
           </div>
           <div className="flex justify-end gap-3 pt-4">
             <button

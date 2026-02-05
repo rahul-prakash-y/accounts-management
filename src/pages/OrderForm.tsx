@@ -3,7 +3,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { Plus, Trash, Save, ArrowLeft, Printer } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useReactToPrint } from "react-to-print";
-import { InvoiceToPrint } from "../components/InvoiceToPrint";
+import { InvoiceTemplate } from "../components/InvoiceTemplate";
 import { Select } from "../components/Select";
 import { Toast } from "../components/Toast";
 import { useDataStore } from "../store/dataStore";
@@ -28,7 +28,6 @@ type OrderFormValues = {
   discount: number;
   total: number;
   status: string;
-  amountPaid: number;
   amountPaid: number;
   paymentStatus: "Unpaid" | "Partial" | "Paid";
   subCompanyId?: string;
@@ -168,21 +167,19 @@ export default function OrderForm() {
   const invoiceData = {
     id: "NEW", // Dynamic ID in real app
     date: watchAllFields.date,
-    customerName: watchAllFields.customer_name || "Customer Name",
-    customerAddress: watchAllFields.customer_address,
-    salesmanNo: watchAllFields.salesman_no,
+    customer_name: watchAllFields.customer_name || "Customer Name",
+    customer_address: watchAllFields.customer_address,
+    salesman_no: watchAllFields.salesman_no,
+    subCompanyId: watchAllFields.subCompanyId,
+    status: watchAllFields.status || "Pending",
     items: watchAllFields.items.map((item) => ({
-      description: item.description || "Item",
+      ...item,
       quantity: item.quantity,
-      unitPrice: item.sellingPrice,
-      total: item.quantity * item.sellingPrice,
+      sellingPrice: item.sellingPrice,
+      description: item.description || "Item",
     })),
-    subtotal: watchAllFields.items.reduce(
-      (sum, i) => sum + i.quantity * (i.sellingPrice || 0),
-      0,
-    ),
-    discount: watchAllFields.discount,
-    grandTotal:
+    discount: watchAllFields.discount || 0,
+    total:
       watchAllFields.items.reduce(
         (sum, i) => sum + i.quantity * (i.sellingPrice || 0),
         0,
@@ -499,7 +496,7 @@ export default function OrderForm() {
 
       {/* Hidden Print Component */}
       <div className="hidden">
-        <InvoiceToPrint ref={componentRef} data={invoiceData} />
+        <InvoiceTemplate ref={componentRef} order={invoiceData} />
       </div>
 
       {toast && (

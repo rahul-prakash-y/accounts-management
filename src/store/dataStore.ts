@@ -82,6 +82,7 @@ export interface CompanySettings {
     email: string;
 
     website: string;
+    gstNo?: string;
 }
 
 export interface SubCompany {
@@ -92,6 +93,7 @@ export interface SubCompany {
     phone: string;
     email: string;
     website: string;
+    gstNo?: string;
 }
 
 // ============= Data Generators =============

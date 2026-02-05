@@ -92,7 +92,7 @@ export function DatePicker({
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           className={cn(
-            "w-full px-5 py-3 rounded-2xl bg-white/50 border border-gray-200 text-left flex items-center justify-between",
+            "w-full px-5 py-3 rounded-2xl bg-white/50 border border-gray-200 text-left flex items-center justify-between min-w-44",
             "transition-all duration-300",
             "hover:bg-white hover:border-primary-300 hover:shadow-sm",
             "focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:bg-white",

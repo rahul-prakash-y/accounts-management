@@ -3,7 +3,7 @@ import { Search, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
 import { DataTable, ColumnDef } from "../components/DataTable";
 import { DatePicker } from "../components/DatePicker";
 import { format, subDays } from "date-fns";
-import { useDataStore, TransactionType } from "../store/dataStore";
+import { useDataStore, TransactionType, Transaction } from "../store/dataStore";
 
 export default function Transactions() {
   const transactions = useDataStore((state) => state.transactions);
@@ -185,7 +185,7 @@ export default function Transactions() {
         </div>
 
         {/* Search */}
-        <div className="flex-1 min-w-[200px] relative">
+        <div className="flex-1 min-w-[200px] max-w-96 relative">
           <Search
             className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
             size={18}
@@ -203,6 +203,7 @@ export default function Transactions() {
         data={filteredTransactions}
         columns={columns}
         onRowClick={(txn) => console.log("Clicked", txn.id)}
+
       />
     </div>
   );

@@ -7,6 +7,8 @@ import {
   Printer,
   Download,
   DollarSign,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { DataTable, ColumnDef } from "../components/DataTable";
@@ -59,6 +61,11 @@ export default function Orders() {
     type: "success" | "error";
   } | null>(null);
 
+  // Search & Pagination State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
   const handlePrint = useReactToPrint({
     contentRef: invoiceRef,
   });
@@ -94,9 +101,27 @@ export default function Orders() {
         companyMatch = order.subCompanyId === selectedCompany;
       }
 
-      return dateMatch && companyMatch;
+      // Search Filter
+      const searchMatch = order.customer_name
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+
+      return dateMatch && companyMatch && searchMatch;
     });
-  }, [filterDate, filterEndDate, selectedCompany]);
+  }, [filterDate, filterEndDate, selectedCompany, searchQuery]);
+
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
+  const paginatedOrders = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredOrders.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredOrders, currentPage]);
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
 
   const columns = useMemo<ColumnDef<(typeof orders)[0]>[]>(
     () => [
@@ -262,6 +287,17 @@ export default function Orders() {
           <div className="text-sm text-muted-foreground">
             Showing {filteredOrders.length} orders
           </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+              Company:
+            </span>
+            <Select
+              options={companyOptions}
+              value={selectedCompany}
+              onChange={setSelectedCompany}
+              className="w-[200px]"
+            />
+          </div>
         </div>
       </div>
 
@@ -274,54 +310,27 @@ export default function Orders() {
           />
           <input
             type="text"
-            placeholder="Search orders..."
+            placeholder="Search by customer name..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1); // Reset to first page on search
+            }}
             className="w-full pl-10 pr-4 py-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
           />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-              Company:
-            </span>
-            <Select
-              options={companyOptions}
-              value={selectedCompany}
-              onChange={setSelectedCompany}
-              className="w-[200px]"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-              From:
-            </span>
-            <DatePicker
-              value={filterDate}
-              onChange={setFilterDate}
-              className="w-[160px]"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-              To:
-            </span>
-            <DatePicker
-              value={filterEndDate}
-              onChange={setFilterEndDate}
-              className="w-[160px]"
-            />
-          </div>
         </div>
       </div>
 
       <DataTable
-        data={filteredOrders}
+        data={paginatedOrders}
         columns={columns}
         onRowClick={(order) => console.log("Clicked", order.id)}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        goToPage={goToPage}
+        estimateRowHeight={80}
+        isPagination
       />
-
       {/* Delete Confirmation Modal */}
       <DeleteConfirmationModal
         isOpen={!!deleteOrder}

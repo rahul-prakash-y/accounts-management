@@ -4,6 +4,7 @@ import { Plus, Trash, Save, ArrowLeft, Printer } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useReactToPrint } from "react-to-print";
 import { InvoiceTemplate } from "../components/InvoiceTemplate";
+import { DatePicker } from "../components/DatePicker";
 import { Select } from "../components/Select";
 import { Toast } from "../components/Toast";
 import { useDataStore } from "../store/dataStore";
@@ -296,11 +297,10 @@ export default function OrderForm() {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Date</label>
-            <input
-              type="date"
-              {...register("date")}
-              className="w-full p-2 rounded-md border border-input bg-background"
+            <DatePicker
+              label="Date"
+              value={watch("date")}
+              onChange={(date) => setValue("date", date)}
             />
           </div>
           <div className="space-y-2 md:col-span-2">

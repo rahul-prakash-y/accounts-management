@@ -2,6 +2,7 @@ import React from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { Plus, Trash, Save, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { DatePicker } from "../components/DatePicker";
 
 type PurchaseItem = {
   itemId: string;
@@ -90,11 +91,10 @@ export default function PurchaseForm() {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Date</label>
-            <input
-              type="date"
-              {...register("date")}
-              className="w-full p-2 rounded-md border border-input bg-background"
+            <DatePicker
+              label="Date"
+              value={watch("date")}
+              onChange={(date) => setValue("date", date)}
             />
           </div>
           <div className="space-y-2">

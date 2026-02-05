@@ -273,7 +273,7 @@ export default function OrderForm() {
             </label>
             <Select
               options={subCompanyOptions}
-              value={watch("subCompanyId")}
+              value={watch("subCompanyId") || ""}
               onChange={(value) => setValue("subCompanyId", value)}
               placeholder="Select Sub-company (Default: Main Company)"
             />

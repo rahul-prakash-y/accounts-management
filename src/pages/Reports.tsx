@@ -1,70 +1,13 @@
-import { useMemo, useState, useRef } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { TrendingUp, TrendingDown, DollarSign, Download } from "lucide-react";
 import { DataTable, ColumnDef } from "../components/DataTable";
 import { DatePicker } from "../components/DatePicker";
 import { clsx } from "clsx";
-import { format, subDays } from "date-fns";
+import { format, subDays, isSameDay, isSameWeek, isSameMonth } from "date-fns";
 import { useReactToPrint } from "react-to-print";
-
-// Dummy Financial Data
-const REPORT_DATA = {
-  sales: {
-    today: 1240.5,
-    week: 8450.0,
-    month: 34200.0,
-  },
-  purchases: {
-    today: 450.0,
-    week: 3200.0,
-    month: 15600.0,
-  },
-  expenses: {
-    month: 4320.0,
-  },
-};
-
-// Generate inventory items sales data
-const generateInventorySalesData = () => {
-  const items = [
-    "Laptop",
-    "Mouse",
-    "Keyboard",
-    "Monitor",
-    "Headphones",
-    "Webcam",
-    "USB Cable",
-    "HDMI Cable",
-    "Desk Lamp",
-    "Chair",
-    "Desk",
-    "Notebook",
-    "Pen",
-    "Marker",
-    "Stapler",
-  ];
-
-  const data = [];
-  for (let i = 0; i < 50; i++) {
-    const date = subDays(new Date(), Math.floor(Math.random() * 60));
-    const item = items[Math.floor(Math.random() * items.length)];
-    const quantity = Math.floor(Math.random() * 10) + 1;
-    const unitPrice = Math.floor(Math.random() * 500) + 50;
-
-    data.push({
-      id: i + 1,
-      date: format(date, "yyyy-MM-dd"),
-      itemName: item,
-      quantity: quantity,
-      unitPrice: unitPrice,
-      totalAmount: quantity * unitPrice,
-      customer: `Customer ${Math.floor(Math.random() * 20) + 1}`,
-      orderId: `ORD-${1000 + i}`,
-    });
-  }
-  return data.sort((a, b) => a.date.localeCompare(b.date));
-};
-
-const inventorySalesData = generateInventorySalesData();
+import { useOrderStore } from "../store/orderStore";
+import { usePurchaseStore } from "../store/purchaseStore";
+import { useTransactionStore } from "../store/transactionStore";
 
 function SummaryCard({
   title,
@@ -104,16 +47,96 @@ export default function Reports() {
 
   const printRef = useRef<HTMLDivElement>(null);
 
-  // Filter inventory sales data by date range
-  const filteredSales = useMemo(() => {
-    return inventorySalesData.filter(
-      (sale) => sale.date >= fromDate && sale.date <= toDate,
-    );
-  }, [fromDate, toDate]);
+  const { orders, fetchOrders, isLoading: ordersLoading } = useOrderStore();
+  const {
+    purchases,
+    fetchPurchases,
+    isLoading: purchasesLoading,
+  } = usePurchaseStore();
+  const {
+    transactions,
+    fetchTransactions,
+    isLoading: transactionsLoading,
+  } = useTransactionStore();
 
-  // Group sales by item and calculate totals
+  const isLoading = ordersLoading || purchasesLoading || transactionsLoading;
+
+  useEffect(() => {
+    // For general summary, we at least need the current month
+    // For the custom report table, we need fromDate to toDate
+    const startFetch =
+      fromDate < format(subDays(new Date(), 31), "yyyy-MM-dd")
+        ? fromDate
+        : format(subDays(new Date(), 31), "yyyy-MM-dd");
+
+    // Fetch a large enough page size for reports since we aggregate client-side for now
+    // In a real high-scale app, we'd use server-side aggregation (RPC)
+    fetchOrders(1, 1000, startFetch, toDate);
+    fetchPurchases(1, 1000, startFetch, toDate);
+    fetchTransactions(1, 1000, startFetch, toDate);
+  }, [fetchOrders, fetchPurchases, fetchTransactions, fromDate, toDate]);
+
+  // --- Financial Calculations ---
+  const financialData = useMemo(() => {
+    const today = new Date();
+
+    // Helper to sum totals with safe date parsing
+    const sumTotal = (items: any[], checkFn: (date: Date) => boolean) =>
+      items.reduce((acc, item) => {
+        const itemDate = new Date(item.date);
+        return checkFn(itemDate) ? acc + item.total : acc;
+      }, 0);
+
+    const sumExpenses = (items: any[], checkFn: (date: Date) => boolean) =>
+      items.reduce((acc, item) => {
+        const itemDate = new Date(item.date);
+        return checkFn(itemDate) && item.type === "expense"
+          ? acc + item.amount
+          : acc;
+      }, 0);
+
+    return {
+      sales: {
+        today: sumTotal(orders, (d) => isSameDay(d, today)),
+        week: sumTotal(orders, (d) => isSameWeek(d, today)),
+        month: sumTotal(orders, (d) => isSameMonth(d, today)),
+      },
+      purchases: {
+        today: sumTotal(purchases, (d) => isSameDay(d, today)),
+        week: sumTotal(purchases, (d) => isSameWeek(d, today)),
+        month: sumTotal(purchases, (d) => isSameMonth(d, today)),
+      },
+      expenses: {
+        month: sumExpenses(transactions, (d) => isSameMonth(d, today)),
+      },
+    };
+  }, [orders, purchases, transactions]);
+
+  // --- Inventory Sales Data ---
+
+  // Filter sales items by date range
+  const filteredSalesItems = useMemo(() => {
+    // Flatten all items from all orders within range
+    return orders
+      .filter((order) => {
+        const orderDate = new Date(order.date || order.created_at || new Date())
+          .toISOString()
+          .split("T")[0];
+        return orderDate >= fromDate && orderDate <= toDate;
+      })
+      .flatMap((order) =>
+        order.items.map((item) => ({
+          itemName: item.description || "Unknown Item", // Or look up by itemId if name not preserved
+          quantity: item.quantity,
+          totalAmount: (item.sellingPrice || 0) * item.quantity,
+          // Add other fields if needed for grouping?
+        })),
+      );
+  }, [orders, fromDate, toDate]);
+
+  // Group by item name
   const itemsSummary = useMemo(() => {
-    const grouped = filteredSales.reduce(
+    const grouped = filteredSalesItems.reduce(
       (acc, sale) => {
         if (!acc[sale.itemName]) {
           acc[sale.itemName] = {
@@ -125,7 +148,7 @@ export default function Reports() {
         }
         acc[sale.itemName].totalQuantity += sale.quantity;
         acc[sale.itemName].totalSales += sale.totalAmount;
-        acc[sale.itemName].salesCount += 1;
+        acc[sale.itemName].salesCount += 1; // Count lines, not unique orders
         return acc;
       },
       {} as Record<
@@ -140,7 +163,7 @@ export default function Reports() {
     );
 
     return Object.values(grouped).sort((a, b) => b.totalSales - a.totalSales);
-  }, [filteredSales]);
+  }, [filteredSalesItems]);
 
   // Print/Download PDF function
   const handlePrint = useReactToPrint({
@@ -167,10 +190,13 @@ export default function Reports() {
       },
       {
         header: "Total Sales Amount",
-        className: "flex-[2] text-right",
+        className: "flex-[2] text-center",
         cell: (item) => (
           <span className="font-mono font-medium text-green-600 dark:text-green-400">
-            ${item.totalSales.toLocaleString()}
+            $
+            {item.totalSales.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+            })}
           </span>
         ),
       },
@@ -178,19 +204,44 @@ export default function Reports() {
     [],
   );
 
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Financial Reports</h1>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="space-y-4">
+              <div className="h-6 w-32 bg-muted animate-pulse rounded" />
+              <div className="h-32 bg-card border border-border rounded-xl animate-pulse" />
+              <div className="h-32 bg-card border border-border rounded-xl animate-pulse" />
+              <div className="h-32 bg-card border border-border rounded-xl animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Financial Reports</h1>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-x-3">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               From:
             </span>
             <DatePicker
               value={fromDate}
-              onChange={setFromDate}
-              className="w-[160px]"
+              onChange={(date) => {
+                setFromDate(date);
+                if (date > toDate) {
+                  setToDate(date);
+                }
+              }}
+              className=""
             />
           </div>
           <div className="flex items-center gap-2">
@@ -199,12 +250,17 @@ export default function Reports() {
             </span>
             <DatePicker
               value={toDate}
-              onChange={setToDate}
-              className="w-[160px]"
+              onChange={(date) => {
+                setToDate(date);
+                if (date < fromDate) {
+                  setFromDate(date);
+                }
+              }}
+              className=""
             />
           </div>
           <button
-            onClick={handlePrint}
+            onClick={() => handlePrint()}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-sm font-medium transition-all shadow-sm shadow-primary/20"
           >
             <Download size={16} />
@@ -218,24 +274,24 @@ export default function Reports() {
         {/* Sales Block */}
         <div className="space-y-4">
           <h3 className="font-semibold text-lg flex items-center gap-2">
-            <div className="p-1 rounded bg-green-100 text-green-600 dark:bg-green-900/30">
+            <div className="p-1 rounded bg-green-100 text-green-600 dark:bg-green-100">
               <TrendingUp size={18} />
             </div>
             Sales Revenue
           </h3>
           <SummaryCard
             title="Today"
-            amount={REPORT_DATA.sales.today}
+            amount={financialData.sales.today}
             type="income"
           />
           <SummaryCard
             title="This Week"
-            amount={REPORT_DATA.sales.week}
+            amount={financialData.sales.week}
             type="income"
           />
           <SummaryCard
             title="This Month"
-            amount={REPORT_DATA.sales.month}
+            amount={financialData.sales.month}
             type="income"
           />
         </div>
@@ -243,24 +299,24 @@ export default function Reports() {
         {/* Purchases Block */}
         <div className="space-y-4">
           <h3 className="font-semibold text-lg flex items-center gap-2">
-            <div className="p-1 rounded bg-orange-100 text-orange-600 dark:bg-orange-900/30">
+            <div className="p-1 rounded bg-orange-100 text-orange-600 dark:bg-orange-100">
               <TrendingDown size={18} />
             </div>
             Purchases Cost
           </h3>
           <SummaryCard
             title="Today"
-            amount={REPORT_DATA.purchases.today}
+            amount={financialData.purchases.today}
             type="expense"
           />
           <SummaryCard
             title="This Week"
-            amount={REPORT_DATA.purchases.week}
+            amount={financialData.purchases.week}
             type="expense"
           />
           <SummaryCard
             title="This Month"
-            amount={REPORT_DATA.purchases.month}
+            amount={financialData.purchases.month}
             type="expense"
           />
         </div>
@@ -268,7 +324,7 @@ export default function Reports() {
         {/* Profit & Margins Block */}
         <div className="space-y-4">
           <h3 className="font-semibold text-lg flex items-center gap-2">
-            <div className="p-1 rounded bg-blue-100 text-blue-600 dark:bg-blue-900/30">
+            <div className="p-1 rounded bg-blue-100 text-blue-600 dark:bg-blue-100">
               <DollarSign size={18} />
             </div>
             Profitability
@@ -282,7 +338,7 @@ export default function Reports() {
             <div className="text-2xl font-bold font-mono text-primary">
               $
               {(
-                REPORT_DATA.sales.month - REPORT_DATA.purchases.month
+                financialData.sales.month - financialData.purchases.month
               ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </div>
           </div>
@@ -293,10 +349,14 @@ export default function Reports() {
               Gross Margin
             </h3>
             <div className="text-2xl font-bold font-mono text-green-600 dark:text-green-400">
-              {(
-                (1 - REPORT_DATA.purchases.month / REPORT_DATA.sales.month) *
-                100
-              ).toFixed(1)}
+              {financialData.sales.month > 0
+                ? (
+                    (1 -
+                      financialData.purchases.month /
+                        financialData.sales.month) *
+                    100
+                  ).toFixed(1)
+                : "0.0"}
               %
             </div>
           </div>
@@ -304,7 +364,7 @@ export default function Reports() {
           {/* Expenses */}
           <SummaryCard
             title="Expenses (Month)"
-            amount={REPORT_DATA.expenses.month}
+            amount={financialData.expenses.month}
             type="expense"
           />
         </div>
@@ -373,12 +433,12 @@ export default function Reports() {
               .reduce((sum, item) => sum + item.totalQuantity, 0)
               .toLocaleString()}
           </p>
-          <p>Total Sales Transactions: {filteredSales.length}</p>
+          <p>Total Sales Transactions: {filteredSalesItems.length}</p>
           <p className="text-xl font-bold mt-2">
             Grand Total: $
             {itemsSummary
               .reduce((sum, item) => sum + item.totalSales, 0)
-              .toLocaleString()}
+              .toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </p>
         </div>
       </div>

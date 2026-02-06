@@ -1,17 +1,22 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Plus, Search, Edit3, Trash } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { DataTable, ColumnDef } from "../components/DataTable";
 import { DeleteConfirmationModal } from "../components/DeleteConfirmationModal";
 import { DatePicker } from "../components/DatePicker";
-import { format } from "date-fns";
 import { Toast } from "../components/Toast";
-import { useDataStore } from "../store/dataStore";
+import { usePurchaseStore } from "../store/purchaseStore";
 
 export default function Purchases() {
   const navigate = useNavigate();
-  const purchases = useDataStore((state) => state.purchases);
-  const deletePurchaseFromStore = useDataStore((state) => state.deletePurchase);
+  const {
+    purchases,
+    totalCount,
+    pageSize,
+    currentPage,
+    fetchPurchases,
+    deletePurchase: deletePurchaseStore,
+  } = usePurchaseStore();
 
   const [deletePurchase, setDeletePurchase] = useState<
     (typeof purchases)[0] | null
@@ -24,6 +29,12 @@ export default function Purchases() {
   const [filterEndDate, setFilterEndDate] = useState(
     new Date().toISOString().split("T")[0],
   );
+
+  useEffect(() => {
+    fetchPurchases(currentPage, pageSize, filterDate, filterEndDate);
+  }, [fetchPurchases, currentPage, pageSize, filterDate, filterEndDate]);
+
+  const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "error";
@@ -35,31 +46,32 @@ export default function Purchases() {
         header: "#",
         accessorKey: "id",
         className: "flex-[1] text-muted-foreground",
+        cell: (purchase) => `#${String(purchase.id).substring(0, 6)}`,
       },
       {
         header: "Supplier",
         accessorKey: "supplier_name",
-        className: "flex-[3] font-medium truncate",
+        className: "flex-[3] font-medium truncate text-center",
       },
       {
         header: "Date",
         accessorKey: "date",
-        className: "flex-[2] text-muted-foreground text-left",
+        className: "flex-[2] text-muted-foreground text-center",
       },
       {
         header: "Items",
         cell: (item) => <span>{item.items_count} items</span>,
-        className: "flex-[2]",
+        className: "flex-[2] text-center",
       },
       {
         header: "Total",
         accessorKey: "total",
-        className: "flex-[2] font-mono font-bold text-left",
+        className: "flex-[2] font-mono font-bold text-center",
         cell: (purchase) => `$${purchase.total}`,
       },
       {
         header: "Status",
-        className: "flex-[1]",
+        className: "flex-[1] text-center",
         cell: (item) => (
           <span
             className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -103,6 +115,17 @@ export default function Purchases() {
     [navigate, setDeletePurchase],
   );
 
+  const filteredPurchases = useMemo(() => {
+    return purchases.filter((purchase) => {
+      const matchesSearch = purchase.supplier_name
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+      const matchesDate =
+        purchase.date >= filterDate && purchase.date <= filterEndDate;
+      return matchesSearch && matchesDate;
+    });
+  }, [purchases, searchQuery, filterDate, filterEndDate]);
+
   return (
     <div className="h-full flex flex-col space-y-4">
       {/* Header Actions */}
@@ -127,6 +150,8 @@ export default function Purchases() {
           <input
             type="text"
             placeholder="Search purchases..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
@@ -136,8 +161,13 @@ export default function Purchases() {
           </span>
           <DatePicker
             value={filterDate}
-            onChange={setFilterDate}
-            className="w-[160px]"
+            onChange={(date) => {
+              setFilterDate(date);
+              if (date > filterEndDate) {
+                setFilterEndDate(date);
+              }
+            }}
+            className=""
           />
         </div>
         <div className="flex items-center gap-2">
@@ -146,16 +176,27 @@ export default function Purchases() {
           </span>
           <DatePicker
             value={filterEndDate}
-            onChange={setFilterEndDate}
-            className="w-[160px]"
+            onChange={(date) => {
+              setFilterEndDate(date);
+              if (date < filterDate) {
+                setFilterDate(date);
+              }
+            }}
+            className=""
           />
         </div>
       </div>
 
       <DataTable
-        data={purchases}
+        data={filteredPurchases}
         columns={columns}
         onRowClick={(purchase) => console.log("Clicked", purchase.id)}
+        isPagination={true}
+        currentPage={currentPage}
+        totalPages={Math.ceil(totalCount / pageSize)}
+        goToPage={(page) =>
+          fetchPurchases(page, pageSize, filterDate, filterEndDate)
+        }
       />
 
       {/* Delete Confirmation Modal */}
@@ -165,7 +206,7 @@ export default function Purchases() {
         onConfirm={() => {
           setIsDeleting(true);
           if (deletePurchase) {
-            deletePurchaseFromStore(deletePurchase.id);
+            deletePurchaseStore(deletePurchase.id);
           }
           setTimeout(() => {
             setIsDeleting(false);

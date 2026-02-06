@@ -21,8 +21,61 @@ interface DataTableProps<T> {
   currentPage?: number;
   totalPages?: number;
   goToPage?: (page: number) => void;
-  isPagination?: boolean
+  isPagination?: boolean;
 }
+
+const DataRow = React.memo(
+  ({
+    virtualRow,
+    item,
+    columns,
+    onRowClick,
+    customRowClass,
+  }: {
+    virtualRow: any;
+    item: any;
+    columns: ColumnDef<any>[];
+    onRowClick?: (item: any) => void;
+    customRowClass: string;
+  }) => {
+    return (
+      <div
+        onClick={() => onRowClick && onRowClick(item)}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: `${virtualRow.size}px`,
+          transform: `translateY(${virtualRow.start}px)`,
+        }}
+        className={clsx(
+          "flex items-center gap-4 px-8 border-b border-border/5 transition-all duration-300 ease-out group/row",
+          onRowClick
+            ? "cursor-pointer hover:bg-primary/[0.03] active:bg-primary/[0.06]"
+            : "hover:bg-muted/10",
+          customRowClass,
+        )}
+      >
+        {columns.map((col, colIndex) => (
+          <div
+            key={colIndex}
+            className={clsx(
+              "text-[0.85rem] text-foreground/80 leading-relaxed font-medium transition-all group-hover/row:text-foreground group-hover/row:translate-x-0.5",
+              col.className || "flex-1",
+            )}
+          >
+            {col.cell
+              ? col.cell(item)
+              : col.accessorKey
+                ? String(item[col.accessorKey as keyof any])
+                : null}
+          </div>
+        ))}
+      </div>
+    );
+  },
+);
 
 export function DataTable<T>({
   data,
@@ -30,7 +83,7 @@ export function DataTable<T>({
   onRowClick,
   getRowClassName,
   estimateRowHeight = 60,
-  currentPage=10,
+  currentPage = 1,
   totalPages,
   goToPage,
   isPagination = false,
@@ -76,44 +129,19 @@ export function DataTable<T>({
           >
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
               const item = data[virtualRow.index];
-              const customRowClass = getRowClassName ? getRowClassName(item) : "";
+              const customRowClass = getRowClassName
+                ? getRowClassName(item)
+                : "";
 
               return (
-                <div
+                <DataRow
                   key={virtualRow.index}
-                  onClick={() => onRowClick && onRowClick(item)}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: `${virtualRow.size}px`,
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                  className={clsx(
-                    "flex items-center gap-4 px-8 border-b border-border/5 transition-all duration-300 ease-out group/row",
-                    onRowClick
-                      ? "cursor-pointer hover:bg-primary/[0.03] active:bg-primary/[0.06]"
-                      : "hover:bg-muted/10",
-                    customRowClass,
-                  )}
-                >
-                  {columns.map((col, colIndex) => (
-                    <div
-                      key={colIndex}
-                      className={clsx(
-                        "text-[0.85rem] text-foreground/80 leading-relaxed font-medium transition-all group-hover/row:text-foreground group-hover/row:translate-x-0.5",
-                        col.className || "flex-1",
-                      )}
-                    >
-                      {col.cell
-                        ? col.cell(item)
-                        : col.accessorKey
-                          ? String(item[col.accessorKey])
-                          : null}
-                    </div>
-                  ))}
-                </div>
+                  virtualRow={virtualRow}
+                  item={item}
+                  columns={columns}
+                  onRowClick={onRowClick}
+                  customRowClass={customRowClass}
+                />
               );
             })}
 
@@ -127,7 +155,8 @@ export function DataTable<T>({
                     Nothing to display
                   </p>
                   <p className="text-sm text-muted-foreground/60 mt-1 max-w-[200px]">
-                    It seems we couldn't find any records matching your criteria.
+                    It seems we couldn't find any records matching your
+                    criteria.
                   </p>
                 </div>
               </div>
@@ -135,7 +164,8 @@ export function DataTable<T>({
           </div>
         </div>
       </div>
-      {isPagination && (<div className="flex items-center justify-between px-4 py-2 bg-card border border-border rounded-lg shadow-sm">
+      {isPagination && (
+        <div className="flex items-center justify-between px-4 py-2 bg-card border border-border rounded-lg shadow-sm">
           <span className="text-sm text-gray-700">
             Page <span className="font-semibold">{currentPage || 1}</span> of{" "}
             <span className="font-semibold">{totalPages || 1}</span>
@@ -148,17 +178,23 @@ export function DataTable<T>({
             >
               <ChevronLeft size={16} />
             </button>
-            {Array.from({ length: totalPages || 10 }, (_, i) => i + 1).map((page) => (
-              <button
-                key={page}
-                onClick={() => goToPage?.(page)}
-                className={cn("px-3 py-1 rounded-md hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors",{
-                  "bg-primary text-primary-foreground hover:bg-primary/80": currentPage === page,
-                })}
-              >
-                {page}
-              </button>
-            ))}
+            {Array.from({ length: totalPages || 1 }, (_, i) => i + 1).map(
+              (page) => (
+                <button
+                  key={page}
+                  onClick={() => goToPage?.(page)}
+                  className={cn(
+                    "px-3 py-1 rounded-md hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors",
+                    {
+                      "bg-primary text-primary-foreground hover:bg-primary/80":
+                        currentPage === page,
+                    },
+                  )}
+                >
+                  {page}
+                </button>
+              ),
+            )}
             <button
               onClick={() => goToPage?.((currentPage || 1) + 1)}
               disabled={currentPage === totalPages}
@@ -167,7 +203,8 @@ export function DataTable<T>({
               <ChevronRight size={16} />
             </button>
           </div>
-        </div>)}
+        </div>
+      )}
     </div>
   );
 }

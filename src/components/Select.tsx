@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { ChevronDown } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { ChevronDown, Search } from "lucide-react";
 import { cn } from "../lib/utils";
 
 interface Option {
@@ -15,6 +15,7 @@ interface SelectProps {
   placeholder?: string;
   className?: string;
   error?: string;
+  searchable?: boolean;
 }
 
 export function Select({
@@ -25,9 +26,12 @@ export function Select({
   placeholder = "Select an option",
   className,
   error,
+  searchable = true,
 }: SelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -43,7 +47,25 @@ export function Select({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (isOpen && searchable && inputRef.current) {
+      inputRef.current.focus();
+    }
+    if (!isOpen) {
+      setSearchQuery(""); // Reset search when closed
+    }
+  }, [isOpen, searchable]);
+
   const selectedOption = options.find((opt) => opt.value === value);
+
+  const filteredOptions = useMemo(() => {
+    if (!searchQuery) return options.slice(0, 10);
+    return options
+      .filter((opt) =>
+        opt.label.toLowerCase().includes(searchQuery.toLowerCase()),
+      )
+      .slice(0, 10);
+  }, [options, searchQuery]);
 
   return (
     <div className={cn("space-y-2", className)} ref={containerRef}>
@@ -77,13 +99,31 @@ export function Select({
 
         {isOpen && (
           <div className="absolute z-50 mt-2 w-full bg-white/90 backdrop-blur-xl border border-white/50 rounded-2xl shadow-xl animate-in fade-in zoom-in-95 duration-200 origin-top overflow-hidden">
+            {searchable && (
+              <div className="px-3 py-2 border-b border-gray-100">
+                <div className="relative">
+                  <Search
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={14}
+                  />
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    placeholder="Search..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg bg-gray-50 border border-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:bg-white transition-colors"
+                  />
+                </div>
+              </div>
+            )}
             <div className="max-h-60 overflow-y-auto py-1 custom-scrollbar">
-              {options.length === 0 ? (
+              {filteredOptions.length === 0 ? (
                 <div className="px-4 py-3 text-sm text-gray-500 text-center">
                   No options found
                 </div>
               ) : (
-                options.map((option) => (
+                filteredOptions.map((option) => (
                   <button
                     key={option.value}
                     type="button"

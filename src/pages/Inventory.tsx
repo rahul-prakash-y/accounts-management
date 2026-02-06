@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Plus,
   Search,
@@ -13,19 +13,22 @@ import { DataTable, ColumnDef } from "../components/DataTable";
 import { DeleteConfirmationModal } from "../components/DeleteConfirmationModal";
 import { Toast } from "../components/Toast";
 import { clsx } from "clsx";
-import { useDataStore } from "../store/dataStore";
+import { useInventoryStore } from "../store/inventoryStore";
 
 export default function Inventory() {
   const navigate = useNavigate();
-  const items = useDataStore((state) => state.inventory);
-  console.log("inventory", items);
-  const deleteInventoryItemFromStore = useDataStore(
-    (state) => state.deleteInventoryItem,
-  );
-  const updateInventoryItemFromStore = useDataStore(
-    (state) => state.updateInventoryItem,
-  );
+  const {
+    inventory: items,
+    fetchInventory,
+    deleteInventoryItem: deleteInventoryItemStore,
+    updateInventoryItem: updateInventoryItemStore,
+  } = useInventoryStore();
 
+  useEffect(() => {
+    fetchInventory();
+  }, [fetchInventory]);
+
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedItem, setSelectedItem] = useState<(typeof items)[0] | null>(
     null,
   );
@@ -59,7 +62,7 @@ export default function Inventory() {
       {
         header: "Price",
         className: "flex-[2] text-center font-mono",
-        cell: (item) => `$${item.unit_price}`,
+        cell: (item) => `$${Number(item.unit_price).toFixed(2)}`,
       },
       {
         header: "Stock",
@@ -109,46 +112,55 @@ export default function Inventory() {
         header: "Actions",
         className: "flex-[2] flex items-center justify-center gap-2",
         cell: (item) => {
-          console.log("item: ", item)
-          return(
-          <div className="flex items-center gap-2">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/inventory/edit/${item.id}`);
-              }}
-              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
-            >
-              <Edit3 size={12} />
-              Edit
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedItem(item);
-                setStockAdjustment(0);
-                setAdjustmentNote("");
-              }}
-              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors"
-            >
-              <Package2 size={12} />
-              Stock
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setDeleteItem(item);
-              }}
-              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 rounded-md transition-colors"
-            >
-              <Trash size={12} />
-            </button>
-          </div>
-        )},
+          console.log("item: ", item);
+          return (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/inventory/edit/${item.id}`);
+                }}
+                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
+              >
+                <Edit3 size={12} />
+                Edit
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedItem(item);
+                  setStockAdjustment(0);
+                  setAdjustmentNote("");
+                }}
+                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors"
+              >
+                <Package2 size={12} />
+                Stock
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteItem(item);
+                }}
+                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 rounded-md transition-colors"
+              >
+                <Trash size={12} />
+              </button>
+            </div>
+          );
+        },
       },
     ],
     [],
   );
+
+  const filteredItems = useMemo(() => {
+    return items.filter(
+      (item) =>
+        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.sku.toLowerCase().includes(searchQuery.toLowerCase()),
+    );
+  }, [items, searchQuery]);
 
   return (
     <div className="h-full flex flex-col space-y-4">
@@ -174,13 +186,15 @@ export default function Inventory() {
           <input
             type="text"
             placeholder="Search items by SKU or Name..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
       </div>
 
       <DataTable
-        data={items}
+        data={filteredItems}
         columns={columns}
         getRowClassName={(item) =>
           item.stock_level <= 0
@@ -290,7 +304,7 @@ export default function Inventory() {
                   if (selectedItem) {
                     const newStockLevel =
                       selectedItem.stock_level + stockAdjustment;
-                    updateInventoryItemFromStore(selectedItem.id, {
+                    updateInventoryItemStore(selectedItem.id, {
                       stock_level: newStockLevel,
                       status:
                         newStockLevel === 0
@@ -323,7 +337,7 @@ export default function Inventory() {
         onConfirm={() => {
           setIsDeleting(true);
           if (deleteItem) {
-            deleteInventoryItemFromStore(deleteItem.id);
+            deleteInventoryItemStore(deleteItem.id);
           }
           setTimeout(() => {
             setIsDeleting(false);

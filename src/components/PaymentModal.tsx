@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Modal } from "./Modal";
-import { Order } from "../store/dataStore";
+import { Order } from "../store/orderStore";
 import { DollarSign } from "lucide-react";
 
 interface PaymentModalProps {
@@ -52,8 +52,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     setIsFullPayment(checked);
     if (checked) {
       setAmount(remainingAmount);
+      setDeliveryStatus("Completed");
     } else {
       setAmount("");
+      // Reset status to previous if unchecking? Maybe keep as is.
     }
   };
 

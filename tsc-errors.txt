@@ -1,0 +1,3 @@
+src/pages/OrderForm.tsx(50,53): error TS2339: Property 'updateOrder' does not exist on type 'OrderState'.
+src/pages/OrderForm.tsx(116,34): error TS2339: Property 'discount' does not exist on type 'Order'.
+src/store/orderStore.ts(155,15): error TS6133: 'sub' is declared but its value is never read.

@@ -1,12 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { Save, ArrowLeft, Package2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useDataStore } from "../store/dataStore";
+import { useInventoryStore } from "../store/inventoryStore";
 import { Toast } from "../components/Toast";
 
 type InventoryFormValues = {
-  id: number;
+  id: string;
   sku: string;
   name: string;
   description: string;
@@ -20,24 +20,31 @@ type InventoryFormValues = {
 export default function InventoryForm() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const fetchInventory = useInventoryStore((s) => s.fetchInventory);
+
+  useEffect(() => {
+    fetchInventory();
+  }, [fetchInventory]);
+
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "error";
   } | null>(null);
-  const createItem = useDataStore((s) => s.addInventoryItem);
-  const updateItem = useDataStore((s) => s.updateInventoryItem);
-  const inventoryItems = useDataStore((s) => s.inventory);
-  const editableItem = inventoryItems?.find((item) => item?.id === Number(id));
+  const createItem = useInventoryStore((s) => s.addInventoryItem);
+  const updateItem = useInventoryStore((s) => s.updateInventoryItem);
+  const inventoryItems = useInventoryStore((s) => s.inventory);
+  const editableItem = inventoryItems?.find((item) => item?.id === id);
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<InventoryFormValues>({
     defaultValues: {
       stock_level: editableItem?.stock_level || 0,
       reorder_level: editableItem?.reorder_level || 10,
-      status: editableItem?.status || "Active",
-      id: editableItem?.id || 0,
+      status: editableItem?.status || "In Stock",
+      id: editableItem?.id || "",
       description: editableItem?.description || "",
       unit_price: editableItem?.unit_price || 0,
       price: editableItem?.price || 0,
@@ -46,22 +53,59 @@ export default function InventoryForm() {
     },
   });
 
-  const onSubmit = (data: InventoryFormValues) => {
-    console.log("Inventory Item Created:", data);
+  useEffect(() => {
     if (editableItem) {
-      updateItem(editableItem?.id, data);
-      setToast({
-        message: "Inventory item updated successfully!",
-        type: "success",
-      });
-    } else {
-      createItem({ ...data, id: inventoryItems?.length + 1 });
-      setToast({
-        message: "Inventory item created successfully!",
-        type: "success",
+      reset({
+        stock_level: editableItem.stock_level,
+        reorder_level: editableItem.reorder_level,
+        status: editableItem.status,
+        id: editableItem.id,
+        description: editableItem.description || "",
+        unit_price: editableItem.unit_price,
+        price: editableItem.price,
+        name: editableItem.name,
+        sku: editableItem.sku,
       });
     }
-    setTimeout(() => navigate("/inventory"), 1000);
+  }, [editableItem, reset]);
+
+  const onSubmit = async (data: InventoryFormValues) => {
+    console.log("Inventory Item Created:", data);
+
+    // Calculate status based on stock level
+    let status = "In Stock";
+    if (data.stock_level <= 0) {
+      status = "Out of Stock";
+    } else if (data.stock_level < data.reorder_level) {
+      status = "Low Stock";
+    }
+
+    try {
+      if (editableItem) {
+        await updateItem(editableItem?.id, { ...data, status });
+        setToast({
+          message: "Inventory item updated successfully!",
+          type: "success",
+        });
+      } else {
+        await createItem({ ...data, status });
+        setToast({
+          message: "Inventory item created successfully!",
+          type: "success",
+        });
+      }
+      setTimeout(() => navigate("/inventory"), 1000);
+    } catch (error) {
+      console.error("Failed to save inventory item:", error);
+      setToast({
+        message: "Failed to save item. Please try again.",
+        type: "error",
+      });
+    }
+  };
+
+  const onError = (errors: any) => {
+    console.log("Form Errors:", errors);
   };
 
   return (
@@ -81,7 +125,7 @@ export default function InventoryForm() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit, onError)} className="space-y-6">
         <div className="bg-card p-6 rounded-xl border border-border shadow-sm space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
@@ -128,13 +172,18 @@ export default function InventoryForm() {
                 type="number"
                 step="0.01"
                 {...register("unit_price", {
-                  required: true,
-                  min: 0,
+                  required: "Unit price is required",
+                  min: { value: 0, message: "Price must be positive" },
                   valueAsNumber: true,
                 })}
                 className="w-full p-2.5 rounded-lg border border-input bg-background focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                 placeholder="0.00"
               />
+              {errors.unit_price && (
+                <p className="text-xs text-destructive">
+                  {errors.unit_price.message}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -142,12 +191,17 @@ export default function InventoryForm() {
               <input
                 type="number"
                 {...register("stock_level", {
-                  required: true,
-                  min: 0,
+                  required: "Stock level is required",
+                  min: { value: 0, message: "Stock cannot be negative" },
                   valueAsNumber: true,
                 })}
                 className="w-full p-2.5 rounded-lg border border-input bg-background focus:ring-2 focus:ring-primary/20 outline-none transition-all"
               />
+              {errors.stock_level && (
+                <p className="text-xs text-destructive">
+                  {errors.stock_level.message}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -155,24 +209,35 @@ export default function InventoryForm() {
               <input
                 type="number"
                 {...register("reorder_level", {
-                  required: true,
-                  min: 0,
+                  required: "Reorder level is required",
+                  min: { value: 0, message: "Level cannot be negative" },
                   valueAsNumber: true,
                 })}
                 className="w-full p-2.5 rounded-lg border border-input bg-background focus:ring-2 focus:ring-primary/20 outline-none transition-all"
               />
+              {errors.reorder_level && (
+                <p className="text-xs text-destructive">
+                  {errors.reorder_level.message}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Price</label>
               <input
                 type="number"
+                step="0.01"
                 {...register("price", {
-                  required: true,
-                  min: 0,
+                  required: "Selling price is required",
+                  min: { value: 0, message: "Price must be positive" },
                   valueAsNumber: true,
                 })}
                 className="w-full p-2.5 rounded-lg border border-input bg-background focus:ring-2 focus:ring-primary/20 outline-none transition-all"
               />
+              {errors.price && (
+                <p className="text-xs text-destructive">
+                  {errors.price.message}
+                </p>
+              )}
             </div>
           </div>
         </div>

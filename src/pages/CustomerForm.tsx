@@ -1,8 +1,10 @@
-import React from "react";
 import { useForm } from "react-hook-form";
 import { Save, ArrowLeft, Users } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { useDataStore } from "../store/dataStore";
+import { useNavigate, useParams } from "react-router-dom";
+import { useCustomerStore } from "../store/customerStore";
+import { Toast } from "../components/Toast";
+import { useState } from "react";
+import { clsx } from "clsx";
 
 type CustomerFormValues = {
   id: string;
@@ -11,31 +13,69 @@ type CustomerFormValues = {
   phone: string;
   address: string;
   balance: number;
-  status: string
+  status: string;
 };
 
 export default function CustomerForm() {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const createCustomer = useCustomerStore((state) => state.addCustomer);
+  const updateCustomer = useCustomerStore((state) => state.updateCustomer);
+  const customers = useCustomerStore((state) => state.customers);
+
+  const editableCustomer = customers.find((c) => c.id === id);
+
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<CustomerFormValues>({
     defaultValues: {
-      balance: 0,
+      id: editableCustomer?.id || "",
+      name: editableCustomer?.name || "",
+      email: editableCustomer?.email || "",
+      phone: editableCustomer?.phone || "",
+      address: editableCustomer?.address || "",
+      balance: editableCustomer?.balance || 0,
+      status: editableCustomer?.status || "Active",
     },
   });
-  const createCustomer = useDataStore((state) => state.addCustomer);
-  const customers = useDataStore((state)=> state.customers);
 
-  const onSubmit = (data: CustomerFormValues) => {
-    console.log("Customer Created:", data);
-    createCustomer({
-      ...data,
-      id: String(customers.length + 1),
-      status: "Active",
-    });
-    navigate("/customers");
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error";
+  } | null>(null);
+
+  const onSubmit = async (data: CustomerFormValues) => {
+    try {
+      if (editableCustomer) {
+        console.log("Customer Updated:", data);
+        await updateCustomer(editableCustomer.id, data);
+        setToast({
+          message: "Customer updated successfully!",
+          type: "success",
+        });
+      } else {
+        console.log("Customer Created:", data);
+        await createCustomer({
+          ...data,
+          status: "Active",
+        });
+        setToast({
+          message: "Customer created successfully!",
+          type: "success",
+        });
+      }
+      setTimeout(() => {
+        navigate("/customers");
+      }, 1000);
+    } catch (error: any) {
+      console.error("Failed to save customer:", error);
+      setToast({
+        message: "Failed to save customer. Please try again.",
+        type: "error",
+      });
+    }
   };
 
   return (
@@ -49,7 +89,9 @@ export default function CustomerForm() {
         </button>
         <div className="flex items-center gap-2">
           <Users className="text-primary" size={24} />
-          <h1 className="text-2xl font-bold">New Customer</h1>
+          <h1 className="text-2xl font-bold">
+            {editableCustomer ? "Edit Customer" : "New Customer"}
+          </h1>
         </div>
       </div>
 
@@ -114,11 +156,17 @@ export default function CustomerForm() {
             <input
               type="number"
               step="0.01"
-              {...register("balance", { valueAsNumber: true, min: 0 })}
-              className="w-full p-2.5 rounded-lg border border-input bg-background focus:ring-2 focus:ring-primary/20 outline-none transition-all text-destructive font-mono"
+              {...register("balance", { valueAsNumber: true })}
+              className={clsx(
+                "w-full p-2.5 rounded-lg border border-input bg-background focus:ring-2 focus:ring-primary/20 outline-none transition-all font-mono",
+                (editableCustomer?.balance ?? 0) < 0
+                  ? "text-destructive"
+                  : "text-green-600",
+              )}
             />
             <p className="text-xs text-muted-foreground italic">
-              Positive balance indicates customer owes money.
+              Negative (Red): Customer owes you. Positive (Green): Customer has
+              credit.
             </p>
           </div>
         </div>
@@ -140,6 +188,14 @@ export default function CustomerForm() {
           </button>
         </div>
       </form>
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }

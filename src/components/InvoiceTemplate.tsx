@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
-import { OrderItem } from "../pages/OrderForm";
-import { useDataStore } from "../store/dataStore";
+import { OrderItem } from "../store/orderStore";
+import { useSettingsStore } from "../store/settingsStore";
 
 interface InvoiceTemplateProps {
   order: {
@@ -8,6 +8,7 @@ interface InvoiceTemplateProps {
     customer_name: string;
     customer_address?: string;
     salesman_no?: string;
+    salesman_name?: string;
     date: string;
     total: number;
     status: string;
@@ -19,8 +20,8 @@ interface InvoiceTemplateProps {
 
 export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
   ({ order }, ref) => {
-    const companySettings = useDataStore((state) => state.companySettings);
-    const subCompanies = useDataStore((state) => state.subCompanies);
+    const companySettings = useSettingsStore((state) => state.companySettings);
+    const subCompanies = useSettingsStore((state) => state.subCompanies);
 
     const subCompany = order.subCompanyId
       ? subCompanies.find((sc) => sc.id === order.subCompanyId)
@@ -33,7 +34,7 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
 
     // Calculate subtotal if not explicit (optional, but safe)
     const subtotal = items.reduce(
-      (sum, item) => sum + item.quantity * item.sellingPrice,
+      (sum, item) => sum + item.quantity * (item.sellingPrice || 0),
       0,
     );
     const discount = order.discount || 0;
@@ -101,14 +102,15 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
               {/* Invoice Meta */}
               <div className="text-right">
                 <p className="text-sm">
-                  <span className="font-semibold">Invoice #:</span> {order.id}
+                  <span className="font-semibold">Invoice #:</span>{" "}
+                  {order.id.toString().substring(0, 6).toUpperCase()}
                 </p>
                 <p className="text-sm">
                   <span className="font-semibold">Date:</span> {order.date}
                 </p>
                 <p className="text-sm">
                   <span className="font-semibold">Salesman:</span>{" "}
-                  {order.salesman_no || "N/A"}
+                  {order.salesman_name || order.salesman_no || "N/A"}
                 </p>
                 <p className="text-sm">
                   <span className="font-semibold">Status:</span>{" "}
@@ -160,10 +162,10 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
                     {item.freeQty || 0}
                   </td>
                   <td className="border border-gray-400 px-4 py-2 text-right">
-                    ${item.sellingPrice.toFixed(2)}
+                    ${item.sellingPrice?.toFixed(2) || 0}
                   </td>
                   <td className="border border-gray-400 px-4 py-2 text-right">
-                    ${(item.quantity * item.sellingPrice).toFixed(2)}
+                    ${(item.quantity * (item?.sellingPrice || 0)).toFixed(2)}
                   </td>
                 </tr>
               ))}

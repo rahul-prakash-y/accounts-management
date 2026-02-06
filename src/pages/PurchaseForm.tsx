@@ -1,39 +1,79 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { Plus, Trash, Save, ArrowLeft } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { DatePicker } from "../components/DatePicker";
-
-type PurchaseItem = {
-  itemId: string;
-  quantity: number;
-  unitPrice: number;
-  description: string;
-};
+import { PurchaseItem, usePurchaseStore } from "../store/purchaseStore";
+import { useInventoryStore } from "../store/inventoryStore";
+import { useTransactionStore, Transaction } from "../store/transactionStore";
+import { Toast } from "../components/Toast";
+import { Select } from "../components/Select";
 
 type PurchaseFormValues = {
   supplierName: string;
   companyName: string;
   date: string;
   items: PurchaseItem[];
+  paymentMode: "Cash" | "UPI" | "Card" | "Net Banking";
 };
-
-const DUMMY_ITEMS = [
-  { id: "1", name: "Wireless Mouse", price: 15.0 }, // Cost price
-  { id: "2", name: "Mechanical Keyboard", price: 80.0 },
-  { id: "3", name: "USB-C Cable", price: 5.0 },
-  { id: "4", name: "Monitor Stand", price: 25.0 },
-];
 
 export default function PurchaseForm() {
   const navigate = useNavigate();
-  const { register, control, handleSubmit, watch, setValue, setFocus } =
+  const { id } = useParams();
+  const inventoryItems = useInventoryStore((state) => state.inventory);
+  console.log("inventoryItems: ", inventoryItems);
+  const fetchInventory = useInventoryStore((state) => state.fetchInventory);
+
+  useEffect(() => {
+    fetchInventory();
+  }, [fetchInventory]);
+  const addTransaction = useTransactionStore((state) => state.addTransaction);
+  const deleteTransaction = useTransactionStore(
+    (state) => state.deleteTransaction,
+  );
+
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error";
+  } | null>(null);
+
+  const [originalItems, setOriginalItems] = useState<PurchaseItem[]>([]);
+
+  const { register, control, handleSubmit, watch, setValue, setFocus, reset } =
     useForm<PurchaseFormValues>({
       defaultValues: {
         date: new Date().toISOString().split("T")[0],
         items: [{ itemId: "", quantity: 1, unitPrice: 0, description: "" }],
+        paymentMode: "Cash",
       },
     });
+  const purchases = usePurchaseStore((state) => state.purchases);
+  const updatePurchase = usePurchaseStore((s) => s.updatePurchase);
+  const addPurchase = usePurchaseStore((s) => s.addPurchase);
+  const updateInventoryItem = useInventoryStore((s) => s.updateInventoryItem);
+
+  // Load existing purchase if in edit mode
+  React.useEffect(() => {
+    if (id) {
+      const purchase = purchases.find((p) => p.id === id);
+      if (purchase) {
+        // Map purchase items to form values
+        // Note: We need to ensure types match. purchase.items should be PurchaseItem[]
+        reset({
+          supplierName: purchase.supplier_name,
+          companyName: purchase.company_name || "",
+          date: purchase.date,
+          paymentMode: purchase.paymentMode || "Cash",
+          // Ensure we map items correctly and handle potential undefined
+          items:
+            purchase.items && purchase.items.length > 0
+              ? purchase.items
+              : [{ itemId: "", quantity: 1, unitPrice: 0, description: "" }],
+        });
+        setOriginalItems(purchase.items || []);
+      }
+    }
+  }, [id, purchases, reset]);
 
   const { fields, append, remove } = useFieldArray({
     control,
@@ -62,9 +102,102 @@ export default function PurchaseForm() {
     }
   };
 
-  const onSubmit = (data: PurchaseFormValues) => {
-    console.log("Purchase Submitted:", data);
-    navigate("/purchases");
+  const onSubmit = async (data: PurchaseFormValues) => {
+    try {
+      const isEdit = !!id;
+      let purchaseId = id;
+      // We no longer use 'PUR-' prefix because transactions.id is a UUID column.
+      // We will use the purchaseId (UUID) as the transaction ID.
+      let transactionId = purchaseId;
+
+      if (isEdit && purchaseId) {
+        // 1. Revert Old Stock
+        for (const item of originalItems) {
+          const inventoryItem = inventoryItems.find(
+            (i) => i.id === item.itemId,
+          );
+          if (inventoryItem) {
+            await updateInventoryItem(inventoryItem.id, {
+              stock_level:
+                (inventoryItem.stock_level || 0) - Number(item.quantity),
+              // Note: We don't revert price as it might have been updated by other purchases
+            });
+          }
+        }
+
+        // 2. Delete Old Transaction
+        if (transactionId) {
+          await deleteTransaction(transactionId);
+        }
+      }
+
+      // 3. Update/Create new stock
+      for (const item of data.items) {
+        const inventoryItem = inventoryItems.find((i) => i.id === item.itemId);
+        if (inventoryItem) {
+          await updateInventoryItem(inventoryItem.id, {
+            stock_level:
+              (inventoryItem.stock_level || 0) + Number(item.quantity),
+            unit_price: Number(item.unitPrice), // Update cost price to latest
+          });
+        }
+      }
+
+      // 4. Create/Update Purchase Record
+      const purchaseData: any = {
+        totalAmount: total,
+        supplierName: data.supplierName,
+        paymentStatus: "Paid",
+
+        id: purchaseId,
+        supplier_name: data.supplierName,
+        company_name: data.companyName,
+        date: data.date,
+        total: total,
+        status: "Received",
+        items_count: data.items.length,
+        items: data.items,
+        paymentMode: data.paymentMode,
+      };
+
+      if (isEdit && purchaseId) {
+        await updatePurchase(purchaseId, purchaseData);
+      } else {
+        purchaseId = await addPurchase(purchaseData);
+        transactionId = purchaseId;
+      }
+
+      // 5. Create Transaction
+      if (!transactionId) {
+        throw new Error("Failed to determine transaction ID");
+      }
+
+      const newTransaction: Transaction = {
+        id: transactionId,
+        type: "purchase",
+        date: data.date,
+        description: `Purchase from ${data.supplierName}`,
+        amount: total,
+        supplier: data.supplierName,
+        paymentMode: data.paymentMode,
+      };
+
+      await addTransaction(newTransaction);
+
+      setToast({
+        message: isEdit
+          ? "Purchase updated successfully!"
+          : "Purchase saved successfully!",
+        type: "success",
+      });
+
+      setTimeout(() => {
+        navigate("/purchases");
+      }, 1000);
+    } catch (error) {
+      console.error("Error saving purchase:", error);
+      setToast({ message: "Failed to save purchase.", type: "error" });
+    }
   };
 
   return (
@@ -76,7 +209,9 @@ export default function PurchaseForm() {
         >
           <ArrowLeft size={24} />
         </button>
-        <h1 className="text-2xl font-bold">New Purchase</h1>
+        <h1 className="text-2xl font-bold">
+          {id ? "Edit Purchase" : "New Purchase"}
+        </h1>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
@@ -107,9 +242,21 @@ export default function PurchaseForm() {
               placeholder="e.g. Acme Corp"
             />
           </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Payment Mode</label>
+            <select
+              {...register("paymentMode")}
+              className="w-full p-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="Cash">Cash</option>
+              <option value="UPI">UPI</option>
+              <option value="Card">Card</option>
+              <option value="Net Banking">Net Banking</option>
+            </select>
+          </div>
         </div>
 
-        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="bg-card rounded-xl border border-border shadow-sm">
           <div className="grid grid-cols-12 gap-2 p-3 bg-muted/50 font-medium text-sm text-muted-foreground border-b border-border">
             <div className="col-span-4">Item</div>
             <div className="col-span-2 text-right">Qty</div>
@@ -125,25 +272,22 @@ export default function PurchaseForm() {
                 className="grid grid-cols-12 gap-2 p-2 items-center hover:bg-muted/10"
               >
                 <div className="col-span-4">
-                  <select
-                    {...register(`items.${index}.itemId` as const)}
-                    className="w-full p-1.5 rounded-md border border-input bg-background text-sm"
-                    onChange={(e) => {
-                      const item = DUMMY_ITEMS.find(
-                        (i) => i.id === e.target.value,
-                      );
+                  <Select
+                    options={inventoryItems.map((item) => ({
+                      value: item.id.toString(),
+                      label: item.name,
+                    }))}
+                    value={items[index]?.itemId?.toString() || ""}
+                    onChange={(value) => {
+                      setValue(`items.${index}.itemId`, value); // Helper to set ID
+                      const item = inventoryItems.find((i) => i.id === value);
                       if (item) {
                         setValue(`items.${index}.unitPrice`, item.price);
                       }
                     }}
-                  >
-                    <option value="">Select Item...</option>
-                    {DUMMY_ITEMS.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select Item..."
+                    className="w-full"
+                  />
                 </div>
                 <div className="col-span-2">
                   <input
@@ -221,6 +365,13 @@ export default function PurchaseForm() {
           </div>
         </div>
       </form>
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }

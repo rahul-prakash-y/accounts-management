@@ -1,63 +1,96 @@
-import React from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   ShoppingCart,
   Package,
-  Warehouse,
   BarChart3,
   Power,
   Users,
-  UserCheck,
-  DollarSign,
   Settings,
+  Shield,
+  ShoppingBag,
+  UserCircle,
+  ArrowRightLeft,
 } from "lucide-react";
 import { clsx } from "clsx";
-import { useAuthStore } from "../store/authStore"; // We will create this next
+import { useAuthStore } from "../store/authStore";
+import { useSettingsStore } from "../store/settingsStore";
 
 export default function Layout() {
   const user = useAuthStore((state) => state.user);
   const signOut = useAuthStore((state) => state.signOut);
+  const companyDetails = useSettingsStore((s) => s.companySettings);
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      navigate("/login");
+    } catch (error) {
+      console.error("Failed to sign out:", error);
+    }
+  };
 
   const allNavItems = [
-    { to: "/", icon: LayoutDashboard, label: "Dashboard", roles: ["admin"] },
     {
-      to: "/orders",
+      icon: LayoutDashboard,
+      label: "Dashboard",
+      to: "/",
+      roles: ["admin", "super_admin"],
+    },
+    {
+      icon: Shield,
+      label: "Admins",
+      to: "/admins",
+      roles: ["super_admin"],
+    },
+    {
       icon: ShoppingCart,
       label: "Orders",
-      roles: ["admin", "salesman", "inventory"],
+      to: "/orders",
+      roles: ["admin", "super_admin", "sales", "warehouse"],
     },
     {
-      to: "/purchases",
       icon: Package,
-      label: "Purchases",
-      roles: ["admin", "inventory"],
-    },
-    {
-      to: "/inventory",
-      icon: Warehouse,
       label: "Inventory",
-      roles: ["admin", "inventory"],
+      to: "/inventory",
+      roles: ["admin", "super_admin", "warehouse"],
     },
     {
-      to: "/transactions",
-      icon: DollarSign,
-      label: "Transactions",
-      roles: ["admin", "inventory"],
+      icon: ShoppingBag,
+      label: "Purchases",
+      to: "/purchases",
+      roles: ["admin", "super_admin", "warehouse"],
     },
-    { to: "/customers", icon: Users, label: "Customers", roles: ["admin"] },
-    { to: "/employees", icon: UserCheck, label: "Employees", roles: ["admin"] },
     {
-      to: "/reports",
+      icon: Users,
+      label: "Customers",
+      to: "/customers",
+      roles: ["admin", "super_admin", "sales"],
+    },
+    {
+      icon: UserCircle,
+      label: "Employees",
+      to: "/employees",
+      roles: ["admin", "super_admin"],
+    },
+    {
       icon: BarChart3,
       label: "Reports",
-      roles: ["admin", "inventory"],
+      to: "/reports",
+      roles: ["admin", "super_admin", "warehouse"],
     },
     {
-      to: "/settings",
+      icon: ArrowRightLeft,
+      label: "Transactions",
+      to: "/transactions",
+      roles: ["admin", "super_admin", "warehouse"],
+    },
+    {
       icon: Settings,
       label: "Settings",
-      roles: ["admin"],
+      to: "/settings",
+      roles: ["admin", "super_admin"],
     },
   ];
 
@@ -75,7 +108,7 @@ export default function Layout() {
           </div>
         </div>
 
-        <nav className="flex-1 w-full px-3 space-y-4">
+        <nav className="flex-1 w-full px-3 space-y-4 ">
           {navItems.map((item) => (
             <SidebarItem
               key={item.to}
@@ -88,7 +121,7 @@ export default function Layout() {
 
         <div className="mt-auto px-3 w-full">
           <button
-            onClick={signOut}
+            onClick={handleSignOut}
             className="w-full aspect-square flex items-center justify-center rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all duration-300 group relative"
           >
             <Power size={24} />
@@ -104,7 +137,7 @@ export default function Layout() {
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         {/* Header */}
         <header className="h-20 border-b border-border bg-card/50 backdrop-blur-md flex items-center justify-between px-8 sticky top-0 z-10 font-medium">
-          <h2 className="text-xl">Overview</h2>
+          <h2 className="text-xl">{companyDetails?.name}</h2>
           <div className="flex items-center gap-4">
             <div className="text-right hidden md:block">
               <div className="text-sm font-bold">{user?.name}</div>

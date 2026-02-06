@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-appaccounts-system",
+  "productName": "Sivani Agencies",
   "version": "0.1.0",
-  "identifier": "com.accounts.system",
+  "identifier": "com.sivani.agencies",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "tauri-appaccounts-system",
+        "title": "Sivani Agencies",
         "width": 800,
         "height": 600
       }
@@ -21,14 +21,7 @@
       "csp": null
     }
   },
-  "plugins": {
-    "dialog": {
-      "all": true
-    },
-    "fs": {
-      "scope": ["$DOWNLOAD/**", "$DOCUMENT/**", "$DESKTOP/**", "$HOME/**"]
-    }
-  },
+  "plugins": {},
   "bundle": {
     "active": true,
     "targets": "all",

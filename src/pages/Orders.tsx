@@ -7,8 +7,6 @@ import {
   Printer,
   Download,
   DollarSign,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { DataTable, ColumnDef } from "../components/DataTable";
@@ -20,23 +18,47 @@ import { useReactToPrint } from "react-to-print";
 import { InvoiceTemplate } from "../components/InvoiceTemplate";
 import { PaymentModal } from "../components/PaymentModal";
 import { Toast } from "../components/Toast";
-import { useDataStore } from "../store/dataStore";
+import { useOrderStore } from "../store/orderStore";
+import { useSettingsStore } from "../store/settingsStore";
+import SkeletonLoader from "../components/SkeletonLoader";
+import { useEffect } from "react";
 
 // COMPANIES removed, will derive from store
 
 export default function Orders() {
   const navigate = useNavigate();
-  const orders = useDataStore((state) => state.orders);
-  const subCompanies = useDataStore((state) => state.subCompanies);
+  const {
+    orders,
+    totalCount,
+    pageSize,
+    currentPage,
+    isLoading,
+    error,
+    fetchOrders,
+    subscribeToOrders,
+    unsubscribeFromOrders,
+  } = useOrderStore();
+
+  useEffect(() => {
+    fetchOrders(currentPage, pageSize);
+    subscribeToOrders();
+    return () => unsubscribeFromOrders();
+  }, [
+    fetchOrders,
+    subscribeToOrders,
+    unsubscribeFromOrders,
+    currentPage,
+    pageSize,
+  ]);
+
+  const subCompanies = useSettingsStore((state) => state.subCompanies);
 
   const companyOptions = [
     { value: "all", label: "All Companies" },
     ...(subCompanies?.map((sc) => ({ value: sc.id, label: sc.name })) || []),
   ];
 
-  const updateOrderPayment = useDataStore((state) => state.updateOrderPayment);
-  const updateOrder = useDataStore((state) => state.updateOrder);
-  const deleteOrderFromStore = useDataStore((state) => state.deleteOrder);
+  const { updateOrder, deleteOrder: deleteOrderFromStore } = useOrderStore(); // Use real store methods
 
   const [filterDate, setFilterDate] = useState(() =>
     format(subDays(new Date(), 30), "yyyy-MM-dd"),
@@ -45,14 +67,10 @@ export default function Orders() {
     format(new Date(), "yyyy-MM-dd"),
   );
   const [selectedCompany, setSelectedCompany] = useState("all");
-  const [deleteOrder, setDeleteOrder] = useState<(typeof orders)[0] | null>(
-    null,
-  );
+  const [deleteOrder, setDeleteOrder] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [printOrder, setPrintOrder] = useState<(typeof orders)[0] | null>(null);
-  const [paymentOrder, setPaymentOrder] = useState<(typeof orders)[0] | null>(
-    null,
-  );
+  const [printOrder, setPrintOrder] = useState<any | null>(null);
+  const [paymentOrder, setPaymentOrder] = useState<any | null>(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
   const bulkInvoiceRef = useRef<HTMLDivElement>(null);
@@ -61,10 +79,8 @@ export default function Orders() {
     type: "success" | "error";
   } | null>(null);
 
-  // Search & Pagination State
+  // Search State
   const [searchQuery, setSearchQuery] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
 
   const handlePrint = useReactToPrint({
     contentRef: invoiceRef,
@@ -81,7 +97,9 @@ export default function Orders() {
       // Date Filter
       let dateMatch = true;
       try {
-        const orderDate = new Date(order.date);
+        const dateStr =
+          order.created_at || order.date || new Date().toISOString();
+        const orderDate = new Date(dateStr);
         if (!isNaN(orderDate.getTime())) {
           const orderDateStr = orderDate.toISOString().split("T")[0];
           dateMatch =
@@ -108,27 +126,22 @@ export default function Orders() {
 
       return dateMatch && companyMatch && searchMatch;
     });
-  }, [filterDate, filterEndDate, selectedCompany, searchQuery]);
+  }, [filterDate, filterEndDate, selectedCompany, searchQuery, orders?.length]);
 
-  // Pagination Logic
-  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
-  const paginatedOrders = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredOrders.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredOrders, currentPage]);
+  // Pagination Logic removed for Virtual Scroll
+  // const totalPages = Math.ceil(filteredOrders.length / 10); // temporary fixed or removed
 
-  const goToPage = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
-      setCurrentPage(page);
-    }
-  };
-
-  const columns = useMemo<ColumnDef<(typeof orders)[0]>[]>(
+  const columns = useMemo<ColumnDef<any>[]>(
     () => [
       {
         header: "#",
         accessorKey: "id",
         className: "flex-[1] text-muted-foreground",
+        cell: (info) => (
+          <span title={info.id} className="font-mono">
+            #{info.id.substring(0, 6).toUpperCase()}
+          </span>
+        ),
       },
       {
         header: "Customer",
@@ -137,7 +150,11 @@ export default function Orders() {
       },
       {
         header: "Date",
-        accessorKey: "date",
+        accessorKey: "created_at",
+        cell: (info) =>
+          info.created_at
+            ? format(new Date(info.created_at), "yyyy-MM-dd")
+            : "N/A",
         className: "flex-[2] text-muted-foreground",
       },
       {
@@ -147,8 +164,30 @@ export default function Orders() {
       },
       {
         header: "Total",
-        cell: (info) => <span className="font-mono">${info.total}</span>,
-        className: "flex-[2] text-left",
+        cell: (info) => (
+          <span className="font-mono">${info.total.toFixed(2)}</span>
+        ),
+        className: "flex-[2] text-right",
+      },
+      {
+        header: "Paid",
+        cell: (info) => (
+          <span className="font-mono text-green-600">
+            ${(info.amountPaid || 0).toFixed(2)}
+          </span>
+        ),
+        className: "flex-[2] text-right",
+      },
+      {
+        header: "Balance",
+        cell: (info) => (
+          <span
+            className={`font-mono ${info.total - (info.amountPaid || 0) > 0 ? "text-destructive" : "text-green-600"}`}
+          >
+            ${(info.total - (info.amountPaid || 0)).toFixed(2)}
+          </span>
+        ),
+        className: "flex-[2] text-right",
       },
       {
         header: "Delivery Status",
@@ -270,8 +309,13 @@ export default function Orders() {
             </span>
             <DatePicker
               value={filterDate}
-              onChange={setFilterDate}
-              className="w-[160px]"
+              onChange={(date) => {
+                setFilterDate(date);
+                if (date > filterEndDate) {
+                  setFilterEndDate(date);
+                }
+              }}
+              className=""
             />
           </div>
           <div className="flex items-center gap-2">
@@ -280,8 +324,13 @@ export default function Orders() {
             </span>
             <DatePicker
               value={filterEndDate}
-              onChange={setFilterEndDate}
-              className="w-[160px]"
+              onChange={(date) => {
+                setFilterEndDate(date);
+                if (date < filterDate) {
+                  setFilterDate(date);
+                }
+              }}
+              className=""
             />
           </div>
           <div className="text-sm text-muted-foreground">
@@ -314,23 +363,34 @@ export default function Orders() {
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
-              setCurrentPage(1); // Reset to first page on search
             }}
             className="w-full pl-10 pr-4 py-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
       </div>
 
-      <DataTable
-        data={paginatedOrders}
-        columns={columns}
-        onRowClick={(order) => console.log("Clicked", order.id)}
-        currentPage={currentPage}
-        totalPages={totalPages}
-        goToPage={goToPage}
-        estimateRowHeight={80}
-        isPagination
-      />
+      {error && (
+        <div className="bg-destructive/15 text-destructive p-4 rounded-md mb-4 border border-destructive/20">
+          <p className="font-semibold">Error loading orders:</p>
+          <p>{error}</p>
+        </div>
+      )}
+
+      {isLoading ? (
+        <SkeletonLoader rows={10} />
+      ) : (
+        <DataTable
+          data={filteredOrders}
+          columns={columns}
+          onRowClick={(order) => console.log("Clicked", order.id)}
+          estimateRowHeight={80}
+          isPagination={true}
+          currentPage={currentPage}
+          totalPages={Math.ceil(totalCount / pageSize)}
+          goToPage={(page) => fetchOrders(page, pageSize)}
+          height={600} // Fixed height for virtualization to work well, or flex-1 in parent
+        />
+      )}
       {/* Delete Confirmation Modal */}
       <DeleteConfirmationModal
         isOpen={!!deleteOrder}
@@ -357,16 +417,26 @@ export default function Orders() {
           setPaymentOrder(null);
         }}
         order={paymentOrder}
-        onSubmit={(amount, mode, status) => {
+        onSubmit={async (amount, mode, status) => {
           if (paymentOrder) {
-            updateOrderPayment(paymentOrder.id, amount, mode);
+            const newAmountPaid = (paymentOrder.amountPaid || 0) + amount;
 
             let message = `Payment of $${amount.toFixed(2)} received via ${mode}`;
 
+            // Construct updates
+            const updates: any = {
+              amountPaid: newAmountPaid,
+              paymentMode: mode, // Last payment mode
+              paymentStatus:
+                newAmountPaid >= paymentOrder.total ? "Paid" : "Partial",
+            };
+
             if (status !== paymentOrder.status) {
-              updateOrder(paymentOrder.id, { status: status });
+              updates.status = status;
               message += ` & Delivery Status updated to ${status}`;
             }
+
+            await updateOrder(paymentOrder.id, updates);
 
             setToast({
               message: message + " successfully!",
@@ -379,7 +449,16 @@ export default function Orders() {
       {/* Hidden Invoice Template for Printing */}
       {printOrder && (
         <div className="hidden">
-          <InvoiceTemplate ref={invoiceRef} order={printOrder} />
+          <InvoiceTemplate
+            ref={invoiceRef}
+            order={{
+              ...printOrder,
+              date:
+                printOrder.date ||
+                printOrder.created_at ||
+                new Date().toISOString().split("T")[0],
+            }}
+          />
         </div>
       )}
 
@@ -391,7 +470,15 @@ export default function Orders() {
               key={order.id}
               className={index > 0 ? "page-break-before" : ""}
             >
-              <InvoiceTemplate order={order} />
+              <InvoiceTemplate
+                order={{
+                  ...order,
+                  date:
+                    order.date ||
+                    order.created_at ||
+                    new Date().toISOString().split("T")[0],
+                }}
+              />
             </div>
           ))}
         </div>

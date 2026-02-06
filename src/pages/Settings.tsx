@@ -8,20 +8,29 @@ import {
   Plus,
   Trash,
   Edit,
+  Loader2,
 } from "lucide-react";
-import { useDataStore, CompanySettings, SubCompany } from "../store/dataStore";
+import { supabase } from "../lib/supabase";
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
+import {
+  useSettingsStore,
+  CompanySettings,
+  SubCompany,
+} from "../store/settingsStore";
 import { Toast } from "../components/Toast";
 import { Modal } from "../components/Modal";
 
 export default function Settings() {
-  const companySettings = useDataStore((state) => state.companySettings);
-  const updateCompanySettings = useDataStore(
+  const companySettings = useSettingsStore((state) => state.companySettings);
+  const fetchSettings = useSettingsStore((state) => state.fetchSettings);
+  const updateCompanySettings = useSettingsStore(
     (state) => state.updateCompanySettings,
   );
-  const subCompanies = useDataStore((state) => state.subCompanies);
-  const addSubCompany = useDataStore((state) => state.addSubCompany);
-  const updateSubCompany = useDataStore((state) => state.updateSubCompany);
-  const deleteSubCompany = useDataStore((state) => state.deleteSubCompany);
+  const subCompanies = useSettingsStore((state) => state.subCompanies);
+  const addSubCompany = useSettingsStore((state) => state.addSubCompany);
+  const updateSubCompany = useSettingsStore((state) => state.updateSubCompany);
+  const deleteSubCompany = useSettingsStore((state) => state.deleteSubCompany);
 
   const [formData, setFormData] = useState<CompanySettings>({
     name: "",
@@ -56,6 +65,10 @@ export default function Settings() {
 
   // Load initial data
   useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
+
+  useEffect(() => {
     if (companySettings) {
       setFormData({
         ...companySettings,
@@ -66,13 +79,17 @@ export default function Settings() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev: CompanySettings) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateCompanySettings(formData);
-    setToast({ message: "Settings saved successfully!", type: "success" });
+    try {
+      await updateCompanySettings(formData);
+      setToast({ message: "Settings saved successfully!", type: "success" });
+    } catch (error) {
+      setToast({ message: "Failed to save settings.", type: "error" });
+    }
   };
 
   // Sub-company Handlers
@@ -99,47 +116,104 @@ export default function Settings() {
     setIsSubCompanyModalOpen(true);
   };
 
-  const handleSaveSubCompany = (e: React.FormEvent) => {
+  const handleSaveSubCompany = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingSubCompany) {
-      updateSubCompany(editingSubCompany.id, subCompanyForm);
-      setToast({
-        message: "Sub-company updated successfully!",
-        type: "success",
-      });
-    } else {
-      const newSubCompany = {
-        ...subCompanyForm,
-        id: `SC-${Date.now()}`,
-      };
-      addSubCompany(newSubCompany);
-      setToast({ message: "Sub-company added successfully!", type: "success" });
+    try {
+      if (editingSubCompany) {
+        await updateSubCompany(editingSubCompany.id, subCompanyForm);
+        setToast({
+          message: "Sub-company updated successfully!",
+          type: "success",
+        });
+      } else {
+        await addSubCompany(subCompanyForm);
+        setToast({
+          message: "Sub-company added successfully!",
+          type: "success",
+        });
+      }
+      setIsSubCompanyModalOpen(false);
+    } catch (error) {
+      setToast({ message: "Failed to save sub-company.", type: "error" });
     }
-    setIsSubCompanyModalOpen(false);
   };
 
-  const handleDeleteSubCompany = (id: string) => {
+  const handleDeleteSubCompany = async (id: string) => {
     if (window.confirm("Are you sure you want to delete this sub-company?")) {
-      deleteSubCompany(id);
-      setToast({
-        message: "Sub-company deleted successfully!",
-        type: "success",
-      });
+      try {
+        await deleteSubCompany(id);
+        setToast({
+          message: "Sub-company deleted successfully!",
+          type: "success",
+        });
+      } catch (error) {
+        setToast({ message: "Failed to delete sub-company.", type: "error" });
+      }
     }
   };
 
-  // Mock Data Actions
-  const handleBackup = () => {
-    const dataStr =
-      "data:text/json;charset=utf-8," +
-      encodeURIComponent(JSON.stringify(localStorage));
-    const downloadAnchorNode = document.createElement("a");
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", "backup.json");
-    document.body.appendChild(downloadAnchorNode); // required for firefox
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
-    setToast({ message: "Backup downloaded successfully!", type: "success" });
+  // Data Actions
+  const [isBackingUp, setIsBackingUp] = useState(false);
+
+  const handleBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      const tables = [
+        "customers",
+        "employees",
+        "products",
+        "company_settings",
+        "sub_companies",
+        "orders",
+        "order_items",
+        "purchases",
+        "purchase_items",
+        "transactions",
+        "system_logs",
+      ];
+
+      const backupData: Record<string, any> = {
+        version: "2.0",
+        timestamp: new Date().toISOString(),
+      };
+
+      await Promise.all(
+        tables.map(async (table) => {
+          const { data, error } = await supabase.from(table).select("*");
+          if (error) {
+            console.error(`Error backing up table ${table}:`, error);
+            return;
+          }
+          backupData[table] = data;
+        }),
+      );
+
+      // 2. Request Save Path from User
+      const filePath = await save({
+        filters: [
+          {
+            name: "JSON",
+            extensions: ["json"],
+          },
+        ],
+        defaultPath: `inventory_backup_${new Date().toISOString().split("T")[0]}.json`,
+      });
+
+      if (!filePath) {
+        setIsBackingUp(false);
+        return; // User cancelled
+      }
+
+      // 3. Write File using Tauri FS
+      await writeTextFile(filePath, JSON.stringify(backupData, null, 2));
+
+      setToast({ message: "Backup saved successfully!", type: "success" });
+    } catch (error) {
+      console.error("Backup failed:", error);
+      setToast({ message: "Backup failed. Please try again.", type: "error" });
+    } finally {
+      setIsBackingUp(false);
+    }
   };
 
   const handleRestore = () => {
@@ -315,9 +389,17 @@ export default function Settings() {
             </p>
             <button
               onClick={handleBackup}
-              className="text-sm bg-secondary text-secondary-foreground px-3 py-2 rounded-md hover:bg-secondary/80 w-full"
+              disabled={isBackingUp}
+              className="text-sm bg-secondary text-secondary-foreground px-3 py-2 rounded-md hover:bg-secondary/80 w-full flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              Download Backup
+              {isBackingUp ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Preparing...
+                </>
+              ) : (
+                "Download Backup"
+              )}
             </button>
           </div>
 

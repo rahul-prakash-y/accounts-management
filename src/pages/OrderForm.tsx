@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { Plus, Trash, Save, ArrowLeft, Printer } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -7,20 +7,17 @@ import { InvoiceTemplate } from "../components/InvoiceTemplate";
 import { DatePicker } from "../components/DatePicker";
 import { Select } from "../components/Select";
 import { Toast } from "../components/Toast";
-import { useDataStore } from "../store/dataStore";
+import { useOrderStore, OrderItem } from "../store/orderStore";
+import { useCustomerStore } from "../store/customerStore";
+import { useSettingsStore } from "../store/settingsStore";
+import { useEmployeeStore } from "../store/employeeStore";
+import { useInventoryStore } from "../store/inventoryStore";
 
 // Types
-export type OrderItem = {
-  itemId: string;
-  quantity: number;
-  freeQty: number;
-  unitPrice: number;
-  sellingPrice: number;
-  description: string;
-};
+// OrderItem is imported from store now
 
 type OrderFormValues = {
-  id: number;
+  id: string | number;
   customer_name: string;
   customer_address: string;
   salesman_no: string;
@@ -31,46 +28,9 @@ type OrderFormValues = {
   status: string;
   amountPaid: number;
   paymentStatus: "Unpaid" | "Partial" | "Paid";
+  paymentMode: "Cash" | "UPI" | "Card" | "Net Banking";
   subCompanyId?: string;
 };
-
-// Dummy Data (would be from DB)
-const DUMMY_ITEMS = [
-  { id: "1", name: "Wireless Mouse", price: 25.0 },
-  { id: "2", name: "Mechanical Keyboard", price: 120.0 },
-  { id: "3", name: "USB-C Cable", price: 15.0 },
-  { id: "4", name: "Monitor Stand", price: 45.0 },
-];
-
-const DUMMY_CUSTOMERS = [
-  {
-    value: "1",
-    label: "Tech Solutions Inc",
-    address: "123 Tech Street, Silicon Valley, CA 94025",
-  },
-  {
-    value: "2",
-    label: "Global Logistics",
-    address: "456 Commerce Ave, New York, NY 10001",
-  },
-  {
-    value: "3",
-    label: "Nexus Retail",
-    address: "789 Market Blvd, Austin, TX 73301",
-  },
-  {
-    value: "4",
-    label: "Acme Corp",
-    address: "321 Business Park, Seattle, WA 98101",
-  },
-];
-
-const DUMMY_SALESMEN = [
-  { value: "S-101", label: "John Smith (S-101)" },
-  { value: "S-102", label: "Sarah Johnson (S-102)" },
-  { value: "S-103", label: "Mike Davis (S-103)" },
-  { value: "S-104", label: "Emily Chen (S-104)" },
-];
 
 export default function OrderForm() {
   const navigate = useNavigate();
@@ -81,12 +41,32 @@ export default function OrderForm() {
   } | null>(null);
 
   console.log("id: ", id);
-  const customers = useDataStore((state) => state.customers);
-  const subCompanies = useDataStore((state) => state.subCompanies);
-  const salemens = useDataStore((state) => state.employees);
-  const inventoryItems = useDataStore((state) => state.inventory);
-  const createSale = useDataStore((state) => state.addOrder);
-  const updateSale = useDataStore((state) => state.updateOrder);
+  console.log("id: ", id);
+  const { customers, fetchCustomers } = useCustomerStore();
+  const { subCompanies, fetchSettings } = useSettingsStore();
+  const { employees: salemens, fetchEmployees } = useEmployeeStore();
+  const { inventory: inventoryItems, fetchInventory } = useInventoryStore();
+  const {
+    addOrder: createSale,
+    updateOrder: updateSale,
+    orders,
+    fetchOrders,
+  } = useOrderStore();
+
+  useEffect(() => {
+    fetchCustomers();
+    fetchSettings();
+    fetchEmployees();
+    fetchInventory();
+    fetchOrders();
+  }, [
+    fetchCustomers,
+    fetchSettings,
+    fetchEmployees,
+    fetchInventory,
+    fetchOrders,
+  ]);
+
   console.log("inventoryItems", inventoryItems);
 
   const customers_options = customers?.map((cus: any) => {
@@ -117,25 +97,30 @@ export default function OrderForm() {
     label: sc.name,
   }));
 
-  const orders = useDataStore((s) => s.orders);
+  // const orders = useOrderStore((s) => s.orders); // Already destructured above
 
   const editableOrder =
-    id && id !== "new" ? orders?.find((o) => o.id === Number(id)) : null;
+    id && id !== "new" ? orders?.find((o) => String(o.id) === id) : null;
 
   const { register, control, handleSubmit, watch, setValue, setFocus } =
     useForm<OrderFormValues>({
       defaultValues: {
-        id: editableOrder?.id || (orders?.length || 0) + 1,
+        id: editableOrder?.id || `temp-${Date.now()}`,
         status: editableOrder?.status || "Pending",
         total: editableOrder?.total || 0,
         amountPaid: editableOrder?.amountPaid || 0,
         paymentStatus: editableOrder?.paymentStatus || "Unpaid",
+        paymentMode: editableOrder?.paymentMode || "Cash",
         subCompanyId: editableOrder?.subCompanyId || "",
         customer_name: editableOrder?.customer_name || "",
         customer_address: editableOrder?.customer_address || "",
         salesman_no: editableOrder?.salesman_no || "",
         date: editableOrder?.date
-          ? new Date(editableOrder.date).toISOString().split("T")[0]
+          ? new Date(
+              editableOrder.date || editableOrder.created_at || new Date(),
+            )
+              .toISOString()
+              .split("T")[0]
           : new Date().toISOString().split("T")[0],
         items: editableOrder?.items || [
           {
@@ -165,12 +150,15 @@ export default function OrderForm() {
   const watchAllFields = watch();
 
   // Transform form data for invoice preview
+  const selectedSalesman = salemens?.find(
+    (s) => s.id === watchAllFields.salesman_no,
+  );
   const invoiceData = {
     id: "NEW", // Dynamic ID in real app
     date: watchAllFields.date,
     customer_name: watchAllFields.customer_name || "Customer Name",
     customer_address: watchAllFields.customer_address,
-    salesman_no: watchAllFields.salesman_no,
+    salesman_no: selectedSalesman?.name || watchAllFields.salesman_no,
     subCompanyId: watchAllFields.subCompanyId,
     status: watchAllFields.status || "Pending",
     items: watchAllFields.items.map((item) => ({
@@ -230,25 +218,77 @@ export default function OrderForm() {
     }
   };
 
-  const onSubmit = (data: OrderFormValues) => {
-    // Set the total field with the calculated grand total
+  const onSubmit = async (data: OrderFormValues) => {
+    // Validation
+    if (!data.subCompanyId) {
+      setToast({
+        message: "Please select a Bill From (Sub-company)",
+        type: "error",
+      });
+      return;
+    }
+    if (!data.customer_name) {
+      setToast({ message: "Please select a Customer", type: "error" });
+      return;
+    }
+    if (!data.salesman_no) {
+      setToast({ message: "Please select a Salesman", type: "error" });
+      return;
+    }
+
+    // Filter out empty items (rows with no item selected)
+    const validItems = data.items.filter(
+      (item) => item.itemId && item.quantity > 0,
+    );
+
+    if (validItems.length === 0) {
+      setToast({
+        message: "Please add at least one valid item to the order",
+        type: "error",
+      });
+      return;
+    }
+
+    // Set the total field with the calculated grand total and use filtered items
+    // Find selected customer object to get ID
+    const selectedCustomer = customers?.find(
+      (c) => c.name === data.customer_name,
+    );
+    // Find selected salesman object to get ID
+    const selectedSalesman = salemens?.find((s) => s.id === data.salesman_no);
+
     const orderData = {
       ...data,
+      id: String(data.id), // Ensure ID is a string for Supabase
+      customer_id: selectedCustomer?.id, // Pass customer UUID
+      salesman_id: selectedSalesman?.id, // Pass salesman UUID
+      salesman_no: selectedSalesman?.id, // Keep for compatibility if needed, but ID is primary
+      items: validItems,
       total: grandTotal,
+      status: data.amountPaid >= grandTotal ? "Completed" : data.status,
     };
 
-    if (editableOrder) {
-      console.log("Order Updated:", orderData);
-      updateSale(editableOrder.id, orderData);
-      setToast({ message: "Order updated successfully!", type: "success" });
-    } else {
-      console.log("Order Submitted:", orderData);
-      createSale(orderData);
-      setToast({ message: "Order created successfully!", type: "success" });
+    try {
+      if (editableOrder) {
+        console.log("Order Updated:", orderData);
+        await updateSale(editableOrder.id, orderData);
+        setToast({ message: "Order updated successfully!", type: "success" });
+      } else {
+        console.log("Order Submitted:", orderData);
+        await createSale(orderData);
+        setToast({ message: "Order created successfully!", type: "success" });
+      }
+      // Only navigate on success
+      setTimeout(() => {
+        navigate("/orders");
+      }, 1500);
+    } catch (error: any) {
+      console.error("Failed to save order:", error);
+      setToast({
+        message: error.message || "Failed to save order. Please try again.",
+        type: "error",
+      });
     }
-    setTimeout(() => {
-      navigate("/orders");
-    }, 1500);
   };
 
   return (
@@ -321,10 +361,22 @@ export default function OrderForm() {
               placeholder="Select salesman"
             />
           </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Payment Mode</label>
+            <select
+              {...register("paymentMode")}
+              className="w-full p-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="Cash">Cash</option>
+              <option value="UPI">UPI</option>
+              <option value="Card">Card</option>
+              <option value="Net Banking">Net Banking</option>
+            </select>
+          </div>
         </div>
 
         {/* Items Grid */}
-        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="bg-card rounded-xl border border-border shadow-sm">
           <div className="grid grid-cols-[3fr_1fr_1fr_1fr_1fr_1.5fr_0.5fr] gap-2 p-3 bg-muted/50 font-medium text-sm text-muted-foreground border-b border-border">
             <div>Item</div>
             <div className="text-right">MRP</div>
@@ -343,7 +395,13 @@ export default function OrderForm() {
               >
                 <div>
                   <Select
-                    options={inventoryItemsOptions}
+                    options={inventoryItemsOptions.filter(
+                      (option) =>
+                        !items.some(
+                          (item, i) =>
+                            i !== index && item.itemId === option.value,
+                        ),
+                    )}
                     value={watch(`items.${index}.itemId`)}
                     onChange={(value) => {
                       setValue(`items.${index}.itemId`, value);
@@ -468,6 +526,21 @@ export default function OrderForm() {
                 {...register("discount", { valueAsNumber: true })}
                 className="w-24 p-1 rounded-md border border-input bg-background text-right"
               />
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Amount Paid</span>
+              <input
+                type="number"
+                step="0.01"
+                {...register("amountPaid", { valueAsNumber: true })}
+                className="w-24 p-1 rounded-md border border-input bg-background text-right"
+              />
+            </div>
+            <div className="flex justify-between text-sm font-semibold text-primary">
+              <span>Remaining Balance</span>
+              <span className="font-mono">
+                ${(grandTotal - (watch("amountPaid") || 0)).toFixed(2)}
+              </span>
             </div>
             <div className="border-t border-border pt-4 flex justify-between font-bold text-lg">
               <span>Grand Total</span>

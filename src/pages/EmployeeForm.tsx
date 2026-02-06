@@ -1,11 +1,12 @@
-import React from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Save, ArrowLeft, Briefcase } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { useDataStore } from "../store/dataStore";
+import { useNavigate, useParams } from "react-router-dom";
+import { useEmployeeStore } from "../store/employeeStore";
+import { Toast } from "../components/Toast";
 
 type EmployeeFormValues = {
-  id: string
+  id: string;
   name: string;
   role: string;
   department: string;
@@ -15,23 +16,60 @@ type EmployeeFormValues = {
 
 export default function EmployeeForm() {
   const navigate = useNavigate();
-  const createEmployee = useDataStore((state)=> state.addEmployee);
-  const employees = useDataStore((state)=> state.employees);
+  const { id } = useParams();
+  const createEmployee = useEmployeeStore((state) => state.addEmployee);
+  const updateEmployee = useEmployeeStore((state) => state.updateEmployee);
+  const employees = useEmployeeStore((state) => state.employees);
+
+  const editableEmployee = employees.find((e) => e.id === id);
+
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<EmployeeFormValues>({
     defaultValues: {
-      status: "Present",
-      department: "Sales",
+      id: editableEmployee?.id || "",
+      name: editableEmployee?.name || "",
+      role: editableEmployee?.role || "",
+      department: editableEmployee?.department || "Sales",
+      location: editableEmployee?.location || "",
+      status: (editableEmployee?.status as "Present" | "Absent") || "Present",
     },
   });
 
-  const onSubmit = (data: EmployeeFormValues) => {
-    console.log("Employee Created:", data);
-    createEmployee({...data, id: (employees?.length + 1).toString()});
-    navigate("/employees");
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error";
+  } | null>(null);
+
+  const onSubmit = async (data: EmployeeFormValues) => {
+    try {
+      if (editableEmployee) {
+        console.log("Employee Updated:", data);
+        await updateEmployee(editableEmployee.id, data);
+        setToast({
+          message: "Employee updated successfully!",
+          type: "success",
+        });
+      } else {
+        console.log("Employee Created:", data);
+        await createEmployee({ ...data, status: "Active" }); // Fixed status and removed ID generation
+        setToast({
+          message: "Employee created successfully!",
+          type: "success",
+        });
+      }
+      setTimeout(() => {
+        navigate("/employees");
+      }, 1000);
+    } catch (error: any) {
+      console.error("Failed to save employee:", error);
+      setToast({
+        message: "Failed to save employee. Please try again.",
+        type: "error",
+      });
+    }
   };
 
   return (
@@ -45,7 +83,9 @@ export default function EmployeeForm() {
         </button>
         <div className="flex items-center gap-2">
           <Briefcase className="text-primary" size={24} />
-          <h1 className="text-2xl font-bold">New Employee</h1>
+          <h1 className="text-2xl font-bold">
+            {editableEmployee ? "Edit Employee" : "New Employee"}
+          </h1>
         </div>
       </div>
 
@@ -151,6 +191,14 @@ export default function EmployeeForm() {
           </button>
         </div>
       </form>
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }

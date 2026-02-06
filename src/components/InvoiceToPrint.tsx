@@ -1,5 +1,5 @@
 import React from "react";
-import { useDataStore } from "../store/dataStore";
+import { useSettingsStore } from "../store/settingsStore";
 
 export type InvoiceData = {
   id: string;
@@ -24,8 +24,8 @@ export const InvoiceToPrint = React.forwardRef<
   { data: InvoiceData }
 >((props, ref) => {
   const { data } = props;
-  const companySettings = useDataStore((state) => state.companySettings);
-  const subCompanies = useDataStore((state) => state.subCompanies);
+  const companySettings = useSettingsStore((state) => state.companySettings);
+  const subCompanies = useSettingsStore((state) => state.subCompanies);
 
   const subCompany = data.subCompanyId
     ? subCompanies.find((sc) => sc.id === data.subCompanyId)

@@ -1,24 +1,52 @@
-import { useMemo, useState } from "react";
-import { Plus, Search, Edit3, Trash, Users, Mail, Phone } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import {
+  Plus,
+  Search,
+  Edit3,
+  Trash,
+  Users,
+  Mail,
+  Phone,
+  DollarSign,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { DataTable, ColumnDef } from "../components/DataTable";
 import { DeleteConfirmationModal } from "../components/DeleteConfirmationModal";
+import { CustomerPaymentModal } from "../components/CustomerPaymentModal";
 import { Toast } from "../components/Toast";
-import { useDataStore } from "../store/dataStore";
+import { useCustomerStore } from "../store/customerStore";
+import { useOrderStore } from "../store/orderStore";
+import { useTransactionStore } from "../store/transactionStore";
 
 export default function Customers() {
   const navigate = useNavigate();
-  const customers = useDataStore((state) => state.customers);
-  const deleteCustomerFromStore = useDataStore((state) => state.deleteCustomer);
+  const {
+    customers,
+    fetchCustomers,
+    deleteCustomer: deleteCustomerStore,
+  } = useCustomerStore();
+
+  // Fetch customers on mount
+  useEffect(() => {
+    fetchCustomers();
+  }, [fetchCustomers]);
 
   const [deleteCustomer, setDeleteCustomer] = useState<
     (typeof customers)[0] | null
   >(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [paymentCustomer, setPaymentCustomer] = useState<
+    (typeof customers)[0] | null
+  >(null);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "error";
   } | null>(null);
+
+  const addTransaction = useTransactionStore((s) => s.addTransaction);
 
   const columns = useMemo<ColumnDef<(typeof customers)[0]>[]>(
     () => [
@@ -26,6 +54,11 @@ export default function Customers() {
         header: "ID",
         accessorKey: "id",
         className: "flex-1 font-mono text-muted-foreground",
+        cell: (info) => (
+          <span title={info.id} className="text-xs">
+            {info.id.substring(0, 8)}...
+          </span>
+        ),
       },
       {
         header: "Name",
@@ -56,8 +89,20 @@ export default function Customers() {
       {
         header: "Balance",
         accessorKey: "balance",
-        className: "flex-[2] font-mono text-right",
-        cell: (customer) => `$${customer.balance.toFixed(2)}`,
+        className: "flex-[2] font-mono text-center",
+        cell: (customer) => (
+          <span
+            className={
+              customer.balance < 0
+                ? "text-destructive font-bold"
+                : "text-green-600 font-bold"
+            }
+          >
+            {customer.balance < 0
+              ? `-$${Math.abs(customer.balance).toFixed(2)}`
+              : `$${customer.balance.toFixed(2)}`}
+          </span>
+        ),
       },
       {
         header: "Status",
@@ -92,12 +137,23 @@ export default function Customers() {
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                setPaymentCustomer(customer);
+                setIsPaymentModalOpen(true);
+              }}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-md transition-colors"
+              title="Receive Payment"
+            >
+              <DollarSign size={12} />
+              Pay
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
                 setDeleteCustomer(customer);
               }}
               className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 rounded-md transition-colors"
             >
               <Trash size={12} />
-              Delete
             </button>
           </div>
         ),
@@ -105,6 +161,15 @@ export default function Customers() {
     ],
     [],
   );
+
+  const filteredCustomers = useMemo(() => {
+    return customers.filter(
+      (customer) =>
+        customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        customer.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        customer.phone.includes(searchQuery),
+    );
+  }, [customers, searchQuery]);
 
   return (
     <div className="h-full flex flex-col space-y-4">
@@ -131,12 +196,14 @@ export default function Customers() {
           <input
             type="text"
             placeholder="Search customers..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
       </div>
 
-      <DataTable data={customers} columns={columns} />
+      <DataTable data={filteredCustomers} columns={columns} />
 
       {/* Delete Confirmation Modal */}
       <DeleteConfirmationModal
@@ -145,7 +212,7 @@ export default function Customers() {
         onConfirm={() => {
           setIsDeleting(true);
           if (deleteCustomer) {
-            deleteCustomerFromStore(deleteCustomer.id);
+            deleteCustomerStore(deleteCustomer.id);
           }
           setTimeout(() => {
             setIsDeleting(false);
@@ -159,6 +226,48 @@ export default function Customers() {
         itemName={deleteCustomer?.name || ""}
         itemType="Customer"
         isDeleting={isDeleting}
+      />
+
+      <CustomerPaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => {
+          setIsPaymentModalOpen(false);
+          setPaymentCustomer(null);
+        }}
+        customer={paymentCustomer}
+        onSubmit={async (amount, mode, description) => {
+          if (paymentCustomer) {
+            try {
+              // Use the smart allocation logic which applies payment to orders FIFO
+              // and records the customer balance change automatically.
+              const { allocateCustomerPayment } = useOrderStore.getState();
+              await allocateCustomerPayment(paymentCustomer.id, amount);
+
+              // 2. Record Transaction
+              await addTransaction({
+                type: "order",
+                date: new Date().toISOString().split("T")[0],
+                description: `${description} - ${paymentCustomer.name}`,
+                amount: amount,
+                paymentMode: mode,
+              });
+
+              setToast({
+                message: `Payment of $${amount.toFixed(2)} received and allocated successfully!`,
+                type: "success",
+              });
+
+              // 3. Refresh List
+              fetchCustomers();
+            } catch (error: any) {
+              setToast({
+                message: error.message || "Failed to process payment",
+                type: "error",
+              });
+              throw error;
+            }
+          }
+        }}
       />
 
       {/* Toast Notification */}

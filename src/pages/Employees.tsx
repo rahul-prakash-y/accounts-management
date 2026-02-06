@@ -6,23 +6,49 @@ import { DeleteConfirmationModal } from "../components/DeleteConfirmationModal";
 import { DatePicker } from "../components/DatePicker";
 import { format } from "date-fns";
 import { Toast } from "../components/Toast";
-import { useDataStore } from "../store/dataStore";
+import { useEmployeeStore } from "../store/employeeStore";
+import SkeletonLoader from "../components/SkeletonLoader";
+import { MonthPicker } from "../components/MonthPicker";
 
 type AttendanceStatus = "present" | "absent" | "leave" | null;
 
 export default function Employees() {
   const navigate = useNavigate();
-  const employees = useDataStore((state) => state.employees);
-  const deleteEmployeeFromStore = useDataStore((state) => state.deleteEmployee);
-  const [activeTab, setActiveTab] = useState<"employees" | "attendance">(
-    "employees",
-  );
+  const {
+    employees,
+    fetchEmployees,
+    deleteEmployee: deleteEmployeeStore,
+    isLoading,
+    attendance,
+    fetchAttendance,
+    markAttendance,
+    fetchMonthlyStats,
+    fetchMonthlyAttendanceMatrix,
+  } = useEmployeeStore();
+
+  useEffect(() => {
+    fetchEmployees();
+  }, [fetchEmployees]);
+
+  const [activeTab, setActiveTab] = useState<
+    "employees" | "attendance" | "calendar"
+  >("employees");
+  const [searchQuery, setSearchQuery] = useState("");
   const [attendanceDate, setAttendanceDate] = useState(() =>
     format(new Date(), "yyyy-MM-dd"),
   );
-  const [attendanceRecords, setAttendanceRecords] = useState<
-    Record<string, AttendanceStatus>
+  // Replaced local attendanceRecords with store 'attendance'
+  const [monthlyStats, setMonthlyStats] = useState<
+    Record<string, { present: number; absent: number; leave: number }>
   >({});
+
+  const [calendarMonth, setCalendarMonth] = useState(() =>
+    format(new Date(), "yyyy-MM"),
+  );
+  const [attendanceMatrix, setAttendanceMatrix] = useState<
+    Record<string, Record<string, string>>
+  >({});
+
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "error";
@@ -32,36 +58,57 @@ export default function Employees() {
   >(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Load attendance from localStorage when date changes
+  // Fetch attendance when date changes
   useEffect(() => {
-    const saved = localStorage.getItem(`attendance_${attendanceDate}`);
-    if (saved) {
-      setAttendanceRecords(JSON.parse(saved));
-    } else {
-      setAttendanceRecords({});
+    fetchAttendance(attendanceDate);
+  }, [attendanceDate, fetchAttendance]);
+
+  // Fetch monthly stats when month changes (derived from attendanceDate)
+  useEffect(() => {
+    const month = attendanceDate.substring(0, 7); // "YYYY-MM"
+    fetchMonthlyStats(month).then((stats) => setMonthlyStats(stats));
+  }, [attendanceDate, fetchMonthlyStats]);
+
+  // Fetch calendar matrix when calendar month changes
+  useEffect(() => {
+    if (activeTab === "calendar") {
+      fetchMonthlyAttendanceMatrix(calendarMonth).then((matrix) =>
+        setAttendanceMatrix(matrix),
+      );
     }
-  }, [attendanceDate]);
+  }, [calendarMonth, fetchMonthlyAttendanceMatrix, activeTab]);
 
-  const saveAttendance = () => {
-    localStorage.setItem(
-      `attendance_${attendanceDate}`,
-      JSON.stringify(attendanceRecords),
-    );
-    setToast({ message: "Attendance saved successfully!", type: "success" });
+  const handleMarkAttendance = async (
+    employeeId: string,
+    status: AttendanceStatus,
+  ) => {
+    if (!status) return;
+    await markAttendance(employeeId, attendanceDate, status);
+
+    // Refresh stats after marking
+    const month = attendanceDate.substring(0, 7);
+    fetchMonthlyStats(month).then((stats) => setMonthlyStats(stats));
+
+    if (activeTab === "calendar") {
+      fetchMonthlyAttendanceMatrix(calendarMonth).then((matrix) =>
+        setAttendanceMatrix(matrix),
+      );
+    }
   };
 
-  const markAttendance = (employeeId: string, status: AttendanceStatus) => {
-    setAttendanceRecords((prev) => ({
-      ...prev,
-      [employeeId]: status,
-    }));
-  };
+  // Generate days for calendar view
+  const calendarDays = useMemo(() => {
+    const [year, month] = calendarMonth.split("-").map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  }, [calendarMonth]);
   const columns = useMemo<ColumnDef<(typeof employees)[0]>[]>(
     () => [
       {
         header: "ID",
         accessorKey: "id",
         className: "flex-[2] font-mono text-muted-foreground",
+        cell: (info) => `#${info.id.substring(0, 6)}`,
       },
       {
         header: "Name",
@@ -147,6 +194,16 @@ export default function Employees() {
     [],
   );
 
+  const filteredEmployees = useMemo(() => {
+    return employees.filter(
+      (employee) =>
+        employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        employee.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        employee.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        employee.id.toLowerCase().includes(searchQuery.toLowerCase()),
+    );
+  }, [employees, searchQuery]);
+
   return (
     <div className="h-full flex flex-col space-y-4">
       {/* Header with Tabs */}
@@ -174,6 +231,16 @@ export default function Employees() {
             >
               Attendance
             </button>
+            <button
+              onClick={() => setActiveTab("calendar")}
+              className={`px-4 py-2 font-medium transition-colors ${
+                activeTab === "calendar"
+                  ? "text-primary border-b-2 border-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Calendar View
+            </button>
           </div>
         </div>
         {activeTab === "employees" && (
@@ -199,15 +266,123 @@ export default function Employees() {
               <input
                 type="text"
                 placeholder="Search employees..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
           </div>
 
-          <DataTable data={employees} columns={columns} />
+          {isLoading ? (
+            <SkeletonLoader rows={5} />
+          ) : (
+            <DataTable data={filteredEmployees} columns={columns} />
+          )}
         </>
       )}
 
+      {/* Calendar View Tab */}
+      {activeTab === "calendar" && (
+        <div className="space-y-4">
+          {/* Month Picker */}
+          <div className="flex items-center justify-between bg-card p-4 rounded-lg border border-border shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 px-4 py-2 bg-background border border-border rounded-xl shadow-sm hover:border-primary-500/50 transition-all duration-300">
+                <Clock size={16} className="text-muted-foreground" />
+                <span className="text-sm font-medium text-muted-foreground mr-1">
+                  Select Month:
+                </span>
+                <MonthPicker
+                  value={calendarMonth}
+                  onChange={(val: any) => setCalendarMonth(val)}
+                />
+              </div>
+            </div>
+            {/* Color Legend */}
+            <div className="flex items-center gap-4 text-xs font-medium mr-2">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-sm shadow-green-500/20"></div>
+                <span className="text-muted-foreground">Present</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm shadow-red-500/20"></div>
+                <span className="text-muted-foreground">Absent / Default</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 shadow-sm shadow-yellow-500/20"></div>
+                <span className="text-muted-foreground">Leave</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Matrix Table */}
+          <div className="bg-card rounded-lg border border-border shadow-sm overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 border-b border-border">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold sticky left-0 bg-secondary/90 z-10 w-48">
+                    Employee
+                  </th>
+                  {calendarDays.map((day) => (
+                    <th
+                      key={day}
+                      className="px-1 py-3 text-center w-8 font-medium text-muted-foreground"
+                    >
+                      {day}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {employees.map((employee, index) => (
+                  <tr
+                    key={employee.id}
+                    className={`border-b border-border ${
+                      index % 2 === 0 ? "bg-background" : "bg-muted/20"
+                    }`}
+                  >
+                    <td
+                      className="px-4 py-3 font-medium sticky left-0 bg-inherit border-r border-border truncate max-w-[12rem] z-10"
+                      title={employee.name}
+                    >
+                      {employee.name}
+                    </td>
+                    {calendarDays.map((day) => {
+                      // Construct date string YYYY-MM-DD
+                      const dateStr = `${calendarMonth}-${String(day).padStart(
+                        2,
+                        "0",
+                      )}`;
+                      const record = attendanceMatrix[employee.id]?.[dateStr];
+
+                      let colorClass = "bg-red-500 dark:bg-red-500"; // Default / None
+                      if (record === "present")
+                        colorClass =
+                          "bg-green-500 shadow-sm shadow-green-500/50";
+                      else if (record === "absent")
+                        colorClass = "bg-red-500 shadow-sm shadow-red-500/50";
+                      else if (record === "leave")
+                        colorClass =
+                          "bg-yellow-500 shadow-sm shadow-yellow-500/50";
+
+                      return (
+                        <td key={day} className="px-1 py-3 text-center">
+                          <div className="flex justify-center">
+                            <div
+                              className={`w-3 h-3 rounded-full ${colorClass}`}
+                              title={`${dateStr}: ${record || "None"}`}
+                            ></div>
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
       {/* Attendance Tab */}
       {activeTab === "attendance" && (
         <div className="space-y-4">
@@ -222,14 +397,6 @@ export default function Employees() {
                 className="w-[180px]"
               />
             </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={saveAttendance}
-                className="bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 transition-colors font-medium"
-              >
-                Save Attendance
-              </button>
-            </div>
           </div>
 
           {/* Attendance Table */}
@@ -243,6 +410,12 @@ export default function Employees() {
                   <th className="text-left px-6 py-3 font-semibold">
                     Role / Department
                   </th>
+                  <th className="text-center px-6 py-3 font-semibold text-green-600">
+                    Present (Month)
+                  </th>
+                  <th className="text-center px-6 py-3 font-semibold text-red-600">
+                    Absent (Month)
+                  </th>
                   <th className="text-center px-6 py-3 font-semibold">
                     Mark Attendance
                   </th>
@@ -250,7 +423,13 @@ export default function Employees() {
               </thead>
               <tbody>
                 {employees.map((employee, index) => {
-                  const status = attendanceRecords[employee.id];
+                  const status = attendance[employee.id]; // Use store state
+                  const stats = monthlyStats[employee.id] || {
+                    present: 0,
+                    absent: 0,
+                    leave: 0,
+                  };
+
                   return (
                     <tr
                       key={employee.id}
@@ -266,7 +445,7 @@ export default function Employees() {
                           <div>
                             <div className="font-medium">{employee.name}</div>
                             <div className="text-sm text-muted-foreground">
-                              {employee.id}
+                              #{employee.id.substring(0, 6)}
                             </div>
                           </div>
                         </div>
@@ -277,11 +456,17 @@ export default function Employees() {
                           {employee.department}
                         </div>
                       </td>
+                      <td className="px-6 py-4 text-center font-medium text-green-600">
+                        {stats.present}
+                      </td>
+                      <td className="px-6 py-4 text-center font-medium text-red-600">
+                        {stats.absent}
+                      </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-center gap-2">
                           <button
                             onClick={() =>
-                              markAttendance(employee.id, "present")
+                              handleMarkAttendance(employee.id, "present")
                             }
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium text-sm transition-all ${
                               status === "present"
@@ -294,7 +479,7 @@ export default function Employees() {
                           </button>
                           <button
                             onClick={() =>
-                              markAttendance(employee.id, "absent")
+                              handleMarkAttendance(employee.id, "absent")
                             }
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium text-sm transition-all ${
                               status === "absent"
@@ -306,7 +491,9 @@ export default function Employees() {
                             Absent
                           </button>
                           <button
-                            onClick={() => markAttendance(employee.id, "leave")}
+                            onClick={() =>
+                              handleMarkAttendance(employee.id, "leave")
+                            }
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium text-sm transition-all ${
                               status === "leave"
                                 ? "bg-yellow-600 text-white"
@@ -334,7 +521,7 @@ export default function Employees() {
         onConfirm={() => {
           setIsDeleting(true);
           if (deleteEmployee) {
-            deleteEmployeeFromStore(deleteEmployee.id);
+            deleteEmployeeStore(deleteEmployee.id);
           }
           setTimeout(() => {
             setIsDeleting(false);

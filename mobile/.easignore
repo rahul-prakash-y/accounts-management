@@ -1,0 +1,20 @@
+# EAS build ignore file
+# Exclude folders that are not needed for the cloud build
+
+node_modules/
+.expo/
+android/
+ios/
+.git/
+dist/
+web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
